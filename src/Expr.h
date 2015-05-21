@@ -132,7 +132,7 @@ struct IRHandle {
     bool same_as(const IRHandle &other) const {
         return ptr.same_as(other.ptr);
     }
-    
+
     /** Compare two IRHandles so they can be used in std::set, std::map, etc. */
     struct Compare {
         bool operator()(const IRHandle &a, const IRHandle &b) const {

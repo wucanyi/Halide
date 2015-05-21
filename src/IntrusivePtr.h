@@ -18,6 +18,7 @@ namespace Internal {
 class RefCounted {
 public:
     mutable int ref_count = 0;
+
     virtual ~RefCounted() {}
 
     void incref() const {
@@ -52,22 +53,49 @@ public:
  */
 template<typename T>
 struct IntrusivePtr {
-    RefCounted *ptr;
+    T *ptr;
 
-    void incref(RefCounted *p) const {
-        if (p) p->incref();
+    void incref(const T *p) {
+        if (p) {
+            // Do an unsafe-case to a RefCounted * so that we can
+            // incref an incomplete type. The inheritance is checked
+            // when any of the methods that grant access to the
+            // pointed-to type are instantiated.
+            ((const RefCounted *)p)->incref();
+        }
     }
 
-    void decref(RefCounted *p) const {
-        if (p) p->decref();
+    void decref(const T *p) {
+        if (p) {
+            ((const RefCounted *)p)->decref();
+        }
+    }
+
+    void check_t_inherits_from_refcounted() const {
+        static_assert(std::is_base_of<RefCounted, T>::value,
+                      "IntrusivePtr<T> requires that T inherits from RefCounted");
     }
 
 public:
 
+    /** Get the raw pointer. */
     T *get() const {
-        return (T*)ptr;
+        check_t_inherits_from_refcounted();
+        return (T *)ptr;
     }
-    
+
+    /** Access a property or method of the pointed-to object. */
+    T *operator->() const {
+        check_t_inherits_from_refcounted();
+        return ptr;
+    }
+
+    /** Get a reference to the pointed-to object. */
+    T &operator*() const {
+        check_t_inherits_from_refcounted();
+        return *ptr;
+    }
+
     ~IntrusivePtr() {
         decref(ptr);
     }
@@ -75,30 +103,25 @@ public:
     IntrusivePtr() : ptr(NULL) {
     }
 
-    IntrusivePtr(T *p) : ptr((RefCounted *)p) {
+    IntrusivePtr(T *p) : ptr(p) {
         incref(ptr);
     }
 
     IntrusivePtr(const IntrusivePtr<T> &other) : ptr(other.ptr) {
         incref(ptr);
     }
-    
+
     IntrusivePtr<T> &operator=(const IntrusivePtr<T> &other) {
         // Other can be inside of something owned by this, so we
         // should be careful to incref other before we decref
         // ourselves.
-        RefCounted *temp = other.ptr;
+        T *temp = other.ptr;
         incref(temp);
         decref(ptr);
         ptr = temp;
         return *this;
     }
 
-    /** Access a property or method of the pointed-to object. */
-    T *operator->() const {
-        return (T*)ptr;
-    }
-    
     /* Handles can be null. This checks that. */
     bool defined() const {
         return ptr != NULL;
