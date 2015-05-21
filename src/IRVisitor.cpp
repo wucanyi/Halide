@@ -218,20 +218,20 @@ void IRVisitor::visit(const Evaluate *op) {
 }
 
 void IRGraphVisitor::include(const Expr &e) {
-    if (visited.count(e.ptr)) {
+    if (visited.count(e)) {
         return;
     } else {
-        visited.insert(e.ptr);
+        visited.insert(e);
         e.accept(this);
         return;
     }
 }
 
 void IRGraphVisitor::include(const Stmt &s) {
-    if (visited.count(s.ptr)) {
+    if (visited.count(s)) {
         return;
     } else {
-        visited.insert(s.ptr);
+        visited.insert(s);
         s.accept(this);
         return;
     }

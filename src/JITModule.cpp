@@ -233,10 +233,8 @@ void load_opengl() {
 
 using namespace llvm;
 
-class JITModuleContents {
+class JITModuleContents : public RefCounted {
 public:
-    mutable RefCount ref_count;
-
     // Just construct a module with symbols to import into other modules.
     JITModuleContents() : execution_engine(NULL),
                           module(NULL),
@@ -262,12 +260,6 @@ public:
 
     std::string name;
 };
-
-template <>
-EXPORT RefCount &ref_count<JITModuleContents>(const JITModuleContents *f) { return f->ref_count; }
-
-template <>
-EXPORT void destroy<JITModuleContents>(const JITModuleContents *f) { delete f; }
 
 namespace {
 
@@ -347,7 +339,7 @@ JITModule::JITModule() {
 
 JITModule::JITModule(const Module &m, const LoweredFunc &fn) {
     jit_module = new JITModuleContents();
-    llvm::Module *llvm_module = compile_module_to_llvm_module(m, jit_module.ptr->context);
+    llvm::Module *llvm_module = compile_module_to_llvm_module(m, jit_module->context);
     std::vector<JITModule> shared_runtime = JITSharedRuntime::get(llvm_module, m.target());
     compile_module(llvm_module, fn.name, m.target(), shared_runtime);
 }
@@ -481,18 +473,18 @@ void JITModule::compile_module(llvm::Module *m, const string &function_name, con
     ee->runStaticConstructorsDestructors(false);
 
     // Stash the various objects that need to stay alive behind a reference-counted pointer.
-    jit_module.ptr->exports = exports;
-    jit_module.ptr->execution_engine = ee;
-    jit_module.ptr->module = m;
-    jit_module.ptr->dependencies = dependencies;
-    jit_module.ptr->main_function = main_fn;
-    jit_module.ptr->argv_function = wrapper_fn;
-    jit_module.ptr->name = function_name;
+    jit_module->exports = exports;
+    jit_module->execution_engine = ee;
+    jit_module->module = m;
+    jit_module->dependencies = dependencies;
+    jit_module->main_function = main_fn;
+    jit_module->argv_function = wrapper_fn;
+    jit_module->name = function_name;
 }
 
 const std::map<std::string, JITModule::Symbol> &JITModule::exports() const {
     internal_assert(defined()) << "JIT module is undefined\n";
-    return jit_module.ptr->exports;
+    return jit_module->exports;
 }
 
 void JITModule::make_externs(const std::vector<JITModule> &deps, llvm::Module *module) {
@@ -516,14 +508,14 @@ void *JITModule::main_function() const {
     if (!defined()) {
         return NULL;
     }
-    return jit_module.ptr->main_function;
+    return jit_module->main_function;
 }
 
 int (*JITModule::argv_function() const)(const void **) {
     if (!defined()) {
         return NULL;
     }
-    return (int (*)(const void **))jit_module.ptr->argv_function;
+    return (int (*)(const void **))jit_module->argv_function;
 }
 
 void JITModule::memoization_cache_set_size(int64_t size) const {
@@ -537,7 +529,7 @@ void JITModule::memoization_cache_set_size(int64_t size) const {
 }
 
 bool JITModule::defined() const {
-    return jit_module.defined() && jit_module.ptr->module != NULL;
+    return jit_module.defined() && jit_module->module != NULL;
 }
 
 namespace {
@@ -651,9 +643,9 @@ void adjust_module_ref_count(void *arg, int32_t count) {
     debug(2) << "Adjusting refcount for module " << module->name << " by " << count << "\n";
 
     if (count > 0) {
-        module->ref_count.increment();
+        module->incref();
     } else {
-        module->ref_count.decrement();
+        module->decref();
     }
 }
 
@@ -720,7 +712,7 @@ JITModule &make_module(llvm::Module *for_module, Target target,
 
         // This function is protected by a mutex so this is thread safe.
         llvm::Module *module =
-            get_initial_module_for_target(target, &runtime.jit_module.ptr->context, true, runtime_kind != MainShared);
+            get_initial_module_for_target(target, &runtime.jit_module->context, true, runtime_kind != MainShared);
         clone_target_options(for_module, module);
 
         std::set<std::string> halide_exports_unique;
@@ -766,18 +758,18 @@ JITModule &make_module(llvm::Module *for_module, Target target,
                 shared_runtimes(MainShared).memoization_cache_set_size(default_cache_size);
             }
 
-            runtime.jit_module.ptr->name = "MainShared";
+            runtime.jit_module->name = "MainShared";
         } else {
-            runtime.jit_module.ptr->name = "GPU";
+            runtime.jit_module->name = "GPU";
         }
 
         uint64_t arg_addr =
-            runtime.jit_module.ptr->execution_engine->getGlobalValueAddress("halide_jit_module_argument");
+            runtime.jit_module->execution_engine->getGlobalValueAddress("halide_jit_module_argument");
 
         internal_assert(arg_addr != 0);
-        *((void **)arg_addr) = runtime.jit_module.ptr;
+        *((void **)arg_addr) = runtime.jit_module.get();
 
-        uint64_t fun_addr = runtime.jit_module.ptr->execution_engine->getGlobalValueAddress("halide_jit_module_adjust_ref_count");
+        uint64_t fun_addr = runtime.jit_module->execution_engine->getGlobalValueAddress("halide_jit_module_adjust_ref_count");
         internal_assert(fun_addr != 0);
         *(void (**)(void *arg, int32_t count))fun_addr = &adjust_module_ref_count;
     }

@@ -78,7 +78,7 @@ protected:
     // @}
 
     /** The nodes visited so far */
-    std::set<const IRNode *> visited;
+    std::set<IRHandle, IRHandle::Compare> visited;
 
 public:
 

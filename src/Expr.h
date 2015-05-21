@@ -24,7 +24,7 @@ class IRVisitor;
 struct IRNodeType {};
 
 /** The abstract base classes for a node in the Halide IR. */
-struct IRNode {
+struct IRNode : public RefCounted {
 
     /** We use the visitor pattern to traverse IR nodes throughout the
      * compiler, so we have a virtual accept method which accepts
@@ -34,26 +34,14 @@ struct IRNode {
     IRNode() {}
     virtual ~IRNode() {}
 
-    /** These classes are all managed with intrusive reference
-       counting, so we also track a reference count. It's mutable
-       so that we can do reference counting even through const
-       references to IR nodes. */
-    mutable RefCount ref_count;
-
     /** Each IR node subclass should return some unique pointer. We
      * can compare these pointers to do runtime type
      * identification. We don't compile with rtti because that
      * injects run-time type identification stuff everywhere (and
      * often breaks when linking external libraries compiled
      * without it), and we only want it for IR nodes. */
-    virtual const IRNodeType *type_info() const = 0;
+    virtual const IRNodeType *node_type() const = 0;
 };
-
-template<>
-EXPORT inline RefCount &ref_count<IRNode>(const IRNode *n) {return n->ref_count;}
-
-template<>
-EXPORT inline void destroy<IRNode>(const IRNode *n) {delete n;}
 
 /** IR nodes are split into expressions and statements. These are
    similar to expressions and statements in C - expressions
@@ -81,29 +69,43 @@ struct BaseExprNode : public IRNode {
 template<typename T>
 struct ExprNode : public BaseExprNode {
     EXPORT void accept(IRVisitor *v) const;
-    virtual IRNodeType *type_info() const {return &_type_info;}
-    static EXPORT IRNodeType _type_info;
+    virtual IRNodeType *node_type() const {return &_node_type;}
+    static EXPORT IRNodeType _node_type;
 };
 
 template<typename T>
 struct StmtNode : public BaseStmtNode {
     EXPORT void accept(IRVisitor *v) const;
-    virtual IRNodeType *type_info() const {return &_type_info;}
-    static EXPORT IRNodeType _type_info;
+    virtual IRNodeType *node_type() const {return &_node_type;}
+    static EXPORT IRNodeType _node_type;
 };
 
 /** IR nodes are passed around opaque handles to them. This is a
    base class for those handles. It manages the reference count,
    and dispatches visitors. */
-struct IRHandle : public IntrusivePtr<const IRNode> {
-    IRHandle() : IntrusivePtr<const IRNode>() {}
-    IRHandle(const IRNode *p) : IntrusivePtr<const IRNode>(p) {}
+struct IRHandle {
+    IntrusivePtr<const IRNode> ptr;
+
+    IRHandle() {}
+    IRHandle(const IRNode *p) : ptr(p) {}
 
     /** Dispatch to the correct visitor method for this node. E.g. if
      * this node is actually an Add node, then this will call
      * IRVisitor::visit(const Add *) */
     void accept(IRVisitor *v) const {
         ptr->accept(v);
+    }
+
+    /** Get the raw pointer that this IRHandle points to. */
+    const IRNode *get() const {
+        return ptr.get();
+    }
+
+    /** Get the ir node type of this IRHandle, (e.g. Add, Sub,
+     * etc). The resulting pointer is unique per node type, and so can
+     * be used to test if two IR nodes have the same type. */
+    const IRNodeType *node_type() const {
+        return ptr->node_type();
     }
 
     /** Downcast this ir node to its actual type (e.g. Add, or
@@ -115,11 +117,28 @@ struct IRHandle : public IntrusivePtr<const IRNode> {
      * }
      */
     template<typename T> const T *as() const {
-        if (ptr->type_info() == &T::_type_info) {
-            return (const T *)ptr;
+        if (node_type() == &T::_node_type) {
+            return (const T *)(get());
         }
         return NULL;
     }
+
+    /** Check if this IRHandle points to some valid IR node. */
+    bool defined() const {
+        return ptr.defined();
+    }
+
+    /** Check if this IRHandle points to the same IR node as another handle. */
+    bool same_as(const IRHandle &other) const {
+        return ptr.same_as(other.ptr);
+    }
+    
+    /** Compare two IRHandles so they can be used in std::set, std::map, etc. */
+    struct Compare {
+        bool operator()(const IRHandle &a, const IRHandle &b) const {
+            return a.ptr < b.ptr;
+        }
+    };
 };
 
 /** Integer constants */
@@ -128,7 +147,7 @@ struct IntImm : public ExprNode<IntImm> {
 
     static IntImm *make(int value) {
         if (value >= -8 && value <= 8 &&
-            !small_int_cache[value + 8].ref_count.is_zero()) {
+            small_int_cache[value + 8].ref_count) {
             return &small_int_cache[value + 8];
         }
         IntImm *node = new IntImm;
@@ -165,6 +184,8 @@ struct StringImm : public ExprNode<StringImm> {
         return node;
     }
 };
+
+class IRCompareCache;
 
 }  // namespace Internal
 
@@ -203,17 +224,15 @@ struct Expr : public Internal::IRHandle {
 
     /** Get the type of this expression node */
     Type type() const {
-        return ((const Internal::BaseExprNode *)ptr)->type;
+        return ((const Internal::BaseExprNode *)ptr.get())->type;
     }
+
+    friend class Internal::IRCompareCache;
 };
 
 /** This lets you use an Expr as a key in a map of the form
  * map<Expr, Foo, ExprCompare> */
-struct ExprCompare {
-    bool operator()(Expr a, Expr b) const {
-        return a.ptr < b.ptr;
-    }
-};
+typedef Internal::IRHandle::Compare ExprCompare;
 
 /** An enum describing a type of device API. Used by schedules, and in
  * the For loop IR node. */
