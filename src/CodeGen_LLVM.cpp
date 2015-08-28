@@ -2877,6 +2877,108 @@ void CodeGen_LLVM::visit(const ProducerConsumer *op) {
     codegen(op->consume);
 }
 
+void CodeGen_LLVM::codegen_in_new_function(Stmt stmt, const std::string &name) {
+    // Find every symbol that the stmt refers to and dump it into a closure
+    Closure closure(stmt, name, buffer_t_type);
+
+    vector<std::string> arg_names = closure.names();
+    vector<llvm::Value *> arg_values;
+    vector<llvm::Type *> arg_types;
+    for (const std::string &name : arg_names) {
+        if (sym_exists(name)) {
+            arg_values.push_back(sym_get(name));
+        } else {
+            // For internal allocations, the closure includes a
+            // .buffer symbol. This value may not exist if we
+            // determined that a buffer_t was not actually necessary
+            // for this internal allocation.
+            internal_assert(ends_with(name, ".buffer"));
+            arg_values.push_back(ConstantPointerNull::get(buffer_t_type->getPointerTo()));
+        }
+        arg_types.push_back(arg_values.back()->getType());
+    }
+
+    // Include user_context
+    Value *user_context = get_user_context();
+    arg_types.push_back(user_context->getType());
+    arg_names.push_back("__user_context");
+    arg_values.push_back(user_context);
+
+    FunctionType *func_t = FunctionType::get(i32, arg_types, false);
+
+    llvm::Function *containing_function = function;
+    function = llvm::Function::Create(func_t, llvm::Function::InternalLinkage,
+                                      function->getName() + "_" + name, module);
+
+    // Make the initial basic block and jump the builder into the new function
+    IRBuilderBase::InsertPoint call_site = builder->saveIP();
+    BasicBlock *block = BasicBlock::Create(*context, "entry", function);
+    builder->SetInsertPoint(block);
+
+    // Save the destructor block
+    BasicBlock *parent_destructor_block = destructor_block;
+    destructor_block = NULL;
+
+    // Make a new scope to use
+    Scope<Value *> saved_symbol_table;
+    symbol_table.swap(saved_symbol_table);
+
+    // Unpack the function arguments into the symbol table
+    int idx = 0;
+    for (llvm::Function::arg_iterator iter = function->arg_begin();
+         iter != function->arg_end(); ++iter) {
+        sym_push(arg_names[idx++], iter);
+    }
+
+    // Generate the new function body
+    codegen(stmt);
+
+    // Return success
+    return_with_error_code(ConstantInt::get(i32, 0));
+
+    // Move the builder back to the main function and call the function
+    builder->restoreIP(call_site);
+    Value *result = builder->CreateCall(function, arg_values);
+
+    // Now restore the scope
+    symbol_table.swap(saved_symbol_table);
+    function = containing_function;
+
+    // Restore the destructor block
+    destructor_block = parent_destructor_block;
+
+    // Check for success
+    Value *did_succeed = builder->CreateICmpEQ(result, ConstantInt::get(i32, 0));
+    create_assertion(did_succeed, Expr(), result);
+}
+
+namespace {
+class ContainsLoop : public IRVisitor {
+public:
+    int depth = 0, max_depth = 0;
+private:
+    using IRVisitor::visit;
+    void visit(const For *op) {
+        const IntImm *extent = op->extent.as<IntImm>();
+        if (extent && extent->value < 16) {
+            // Don't count loops LLVM is likely to unroll
+            op->body.accept(this);
+        } else {
+            depth++;
+            max_depth = std::max(depth, max_depth);
+            op->body.accept(this);
+            depth--;
+        }
+    }
+};
+
+int count_loops(Stmt s) {
+    ContainsLoop cl;
+    s.accept(&cl);
+    return cl.max_depth;
+}
+}
+
 void CodeGen_LLVM::visit(const For *op) {
     Value *min = codegen(op->min);
     Value *extent = codegen(op->extent);
@@ -2904,7 +3006,11 @@ void CodeGen_LLVM::visit(const For *op) {
         sym_push(op->name, phi);
 
         // Emit the loop body
-        codegen(op->body);
+        if (count_loops(op->body) > 0) {
+            codegen_in_new_function(op->body, std::string("for ") + op->name);
+        } else {
+            codegen(op->body);
+        }
 
         // Update the counter
         Value *next_var = builder->CreateNSWAdd(phi, ConstantInt::get(i32, 1));

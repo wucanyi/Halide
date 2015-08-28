@@ -190,6 +190,9 @@ protected:
     /** Emit code that runs a statement. */
     void codegen(Stmt);
 
+    /** Emit the code that runs a statement in a new function with the given name. */
+    void codegen_in_new_function(Stmt, const std::string &name);
+
     /** Codegen a vector Expr by codegenning each lane and combining. */
     void scalarize(Expr);
 
