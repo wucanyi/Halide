@@ -281,11 +281,10 @@ enum halide_trace_event_code {halide_trace_load = 0,
                               halide_trace_begin_realization = 2,
                               halide_trace_end_realization = 3,
                               halide_trace_produce = 4,
-                              halide_trace_update = 5,
-                              halide_trace_consume = 6,
-                              halide_trace_end_consume = 7,
-                              halide_trace_begin_pipeline = 8,
-                              halide_trace_end_pipeline = 9};
+                              halide_trace_consume = 5,
+                              halide_trace_end_consume = 6,
+                              halide_trace_begin_pipeline = 7,
+                              halide_trace_end_pipeline = 8};
 
 #pragma pack(push, 1)
 struct halide_trace_event {
@@ -482,6 +481,25 @@ extern void halide_memoization_cache_cleanup();
 extern int halide_create_temp_file(void *user_context,
   const char *prefix, const char *suffix,
   char *path_buf, size_t path_buf_size);
+
+/** Annotate that a given range of memory has been initialized;
+ * only used when Target::MSAN is enabled.
+ *
+ * The default implementation uses the LLVM-provided AnnotateMemoryIsInitialized() function.
+ */
+extern void halide_msan_annotate_memory_is_initialized(void *user_context, const void *ptr, uint64_t len);
+
+/** Mark the data pointed to by the buffer_t as initialized (but *not* the buffer_t itself),
+ * using halide_msan_annotate_memory_is_initialized() for marking. 
+ *
+ * The default implementation takes pains to only mark the active memory ranges
+ * (skipping padding), and sorting into ranges to always mark the smallest number of
+ * ranges, in monotonically increasing memory order.
+ *
+ * Most client code should never need to replace the default implementation.
+ */
+extern void halide_msan_annotate_buffer_is_initialized(void *user_context, struct buffer_t *buffer);
+extern void halide_msan_annotate_buffer_is_initialized_as_destructor(void *user_context, void *buffer);
 
 /** The error codes that may be returned by a Halide pipeline. */
 enum halide_error_code_t {
@@ -709,7 +727,8 @@ typedef enum halide_target_feature_t {
     halide_target_feature_hvx_v62 = 34, ///< Enable Hexagon v62 architecture.
     halide_target_feature_fuzz_float_stores = 35, ///< On every floating point store, set the last bit of the mantissa to zero. Pipelines for which the output is very different with this feature enabled may also produce very different output on different processors.
     halide_target_feature_soft_float_abi = 36, ///< Enable soft float ABI. This only enables the soft float ABI calling convention, which does not necessarily use soft floats.
-    halide_target_feature_end = 37 ///< A sentinel. Every target is considered to have this feature, and setting this feature does nothing.
+    halide_target_feature_msan = 37, ///< Enable hooks for MSAN support.
+    halide_target_feature_end = 38 ///< A sentinel. Every target is considered to have this feature, and setting this feature does nothing.
 } halide_target_feature_t;
 
 /** This function is called internally by Halide in some situations to determine

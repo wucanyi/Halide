@@ -2973,7 +2973,8 @@ private:
                 expr = mutate(sub_b->b < make_zero(sub_b->b.type()));
             } else if (sub_b &&
                        is_const(a) &&
-                       is_const(sub_b->a)) {
+                       is_const(sub_b->a) &&
+                       !is_const(sub_b->b)) {
                 // (c1 < c2 - x) -> (x < c2 - c1)
                 expr = mutate(sub_b->b < (sub_b->a - a));
             } else if (mul_a &&
@@ -4398,48 +4399,15 @@ private:
         }
     }
 
-
     void visit(const ProducerConsumer *op) {
-        Stmt produce = mutate(op->produce);
-        Stmt update = op->update;
-        if (update.defined()) {
-            update = mutate(update);
-            if (is_no_op(update)) {
-                update = Stmt();
-            }
-        }
-        Stmt consume = mutate(op->consume);
+        Stmt body = mutate(op->body);
 
-        const IfThenElse *produce_if = produce.as<IfThenElse>();
-        const IfThenElse *update_if  = update.as<IfThenElse>();
-        const IfThenElse *consume_if = consume.as<IfThenElse>();
-
-        if (is_no_op(produce) &&
-            is_no_op(consume) &&
-            is_no_op(update)) {
+        if (is_no_op(body)) {
             stmt = Evaluate::make(0);
-        } else if (produce_if &&
-                   !produce_if->else_case.defined() &&
-                   consume_if &&
-                   !consume_if->else_case.defined() &&
-                   equal(produce_if->condition, consume_if->condition) &&
-                   (!update.defined() ||
-                    (update_if &&
-                     !update_if->else_case.defined() &&
-                     equal(produce_if->condition, update_if->condition)))) {
-            // All parts are guarded by the same condition. Lift it outwards.
-            Expr condition = produce_if->condition;
-            produce = produce_if->then_case;
-            if (update_if) update = update_if->then_case;
-            consume = consume_if->then_case;
-            stmt = ProducerConsumer::make(op->name, produce, update, consume);
-            stmt = IfThenElse::make(condition, stmt);
-        } else if (produce.same_as(op->produce) &&
-                   update.same_as(op->update) &&
-                   consume.same_as(op->consume)) {
+        } else if (body.same_as(op->body)) {
             stmt = op;
         } else {
-            stmt = ProducerConsumer::make(op->name, produce, update, consume);
+            stmt = ProducerConsumer::make(op->name, op->is_producer, body);
         }
     }
 
@@ -4453,8 +4421,10 @@ private:
         const IfThenElse *if_first = first.as<IfThenElse>();
         const IfThenElse *if_rest = rest.as<IfThenElse>();
 
-        // Check if first is a no-op.
-        if (is_no_op(first)) {
+        if (is_no_op(first) &&
+            is_no_op(rest)) {
+            stmt = Evaluate::make(0);
+        } else if (is_no_op(first)) {
             stmt = rest;
         } else if (is_no_op(rest)) {
             stmt = first;
@@ -4465,15 +4435,14 @@ private:
             // Do both first and rest start with the same let statement (occurs when unrolling).
             Stmt new_block = mutate(Block::make(let_first->body, let_rest->body));
 
-            // We're just going to use the first name, so if the
-            // second name is different we need to rewrite it.
-            if (let_rest->name != let_first->name) {
-                new_block = substitute(let_rest->name,
-                                       Variable::make(let_first->value.type(), let_first->name),
-                                       new_block);
-            }
+            // We need to make a new name since we're pulling it out to a
+            // different scope.
+            string var_name = unique_name('t');
+            Expr new_var = Variable::make(let_first->value.type(), var_name);
+            new_block = substitute(let_first->name, new_var, new_block);
+            new_block = substitute(let_rest->name, new_var, new_block);
 
-            stmt = LetStmt::make(let_first->name, let_first->value, new_block);
+            stmt = LetStmt::make(var_name, let_first->value, new_block);
         } else if (if_first &&
                    if_rest &&
                    equal(if_first->condition, if_rest->condition)) {
@@ -5634,7 +5603,7 @@ void check_indeterminate_ops(Expr e, bool e_is_zero, bool e_is_indeterminate) {
 
 void check_indeterminate() {
     const int32_t values[] = {
-        -2147483648,
+        int32_t(0x80000000),
         -2147483647,
         -2,
         -1,
@@ -5826,6 +5795,13 @@ void simplify_test() {
             e = max(e, 1)/2;
         }
         check(e, e);
+    }
+
+    // This expression is used to cause infinite recursion.
+    {
+        Expr e = Broadcast::make(-16, 2) < (ramp(Cast::make(UInt(16), 7), Cast::make(UInt(16), 11), 2) - Broadcast::make(1, 2));
+        Expr expected = Broadcast::make(-16, 2) < (ramp(make_const(UInt(16), 7), make_const(UInt(16), 11), 2) - Broadcast::make(1, 2));
+        check(e, expected);
     }
 
     std::cout << "Simplify test passed" << std::endl;

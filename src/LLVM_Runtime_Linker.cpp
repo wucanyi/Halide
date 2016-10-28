@@ -89,6 +89,8 @@ DECLARE_CPP_INITMOD(metadata)
 DECLARE_CPP_INITMOD(mingw_math)
 DECLARE_CPP_INITMOD(module_aot_ref_count)
 DECLARE_CPP_INITMOD(module_jit_ref_count)
+DECLARE_CPP_INITMOD(msan)
+DECLARE_CPP_INITMOD(msan_stubs)
 DECLARE_CPP_INITMOD(nacl_host_cpu_count)
 DECLARE_CPP_INITMOD(noos)
 DECLARE_CPP_INITMOD(opencl)
@@ -431,14 +433,6 @@ llvm::Triple get_triple_for_target(const Target &target) {
 }  // namespace Internal
 
 namespace {
-
-uint32_t simple_string_hash(const string &s) {
-    uint32_t result = 0;
-    for (char c : s) {
-        result = result * 101 + c;
-    }
-    return result;
-}
 
 // Link all modules together and with the result in modules[0], all
 // other input modules are destroyed. Sets the datalayout and target
@@ -791,6 +785,12 @@ std::unique_ptr<llvm::Module> get_initial_module_for_target(Target t, llvm::LLVM
             modules.push_back(get_initmod_metadata(c, bits_64, debug));
             modules.push_back(get_initmod_float16_t(c, bits_64, debug));
             modules.push_back(get_initmod_errors(c, bits_64, debug));
+
+            if (t.has_feature(Target::MSAN)) {
+                modules.push_back(get_initmod_msan(c, bits_64, debug));
+            } else {
+                modules.push_back(get_initmod_msan_stubs(c, bits_64, debug));                
+            }
         }
 
         if (module_type != ModuleJITShared) {
@@ -854,6 +854,7 @@ std::unique_ptr<llvm::Module> get_initial_module_for_target(Target t, llvm::LLVM
                 modules.push_back(get_initmod_powerpc_cpu_features(c, bits_64, debug));
             }
         }
+
     }
 
     if (module_type == ModuleJITShared || module_type == ModuleGPU) {

@@ -149,14 +149,12 @@ bool Pipeline::defined() const {
 }
 
 Pipeline::Pipeline(Func output) : contents(new PipelineContents) {
-    output.compute_root().store_root();
     output.function().freeze();
     contents->outputs.push_back(output.function());
 }
 
 Pipeline::Pipeline(const vector<Func> &outputs) : contents(new PipelineContents) {
     for (Func f: outputs) {
-        f.compute_root().store_root();
         f.function().freeze();
         contents->outputs.push_back(f.function());
     }
@@ -277,8 +275,9 @@ void Pipeline::compile_to_lowered_stmt(const string &filename,
 
 void Pipeline::compile_to_static_library(const string &filename_prefix,
                                          const vector<Argument> &args,
+                                         const std::string &fn_name,
                                          const Target &target) {
-    Module m = compile_to_module(args, filename_prefix, target);
+    Module m = compile_to_module(args, fn_name, target);
     Outputs outputs = static_library_outputs(filename_prefix, target);
     m.compile(outputs);
 }
@@ -295,8 +294,9 @@ void Pipeline::compile_to_multitarget_static_library(const std::string &filename
 
 void Pipeline::compile_to_file(const string &filename_prefix,
                                const vector<Argument> &args,
+                               const std::string &fn_name,
                                const Target &target) {
-    Module m = compile_to_module(args, filename_prefix, target);
+    Module m = compile_to_module(args, fn_name, target);
     Outputs outputs = Outputs().c_header(filename_prefix + ".h");
 
     if (target.arch == Target::PNaCl) {
@@ -931,7 +931,7 @@ struct JITFuncCallContext {
 
 // Make a vector of void *'s to pass to the jit call using the
 // currently bound value for all of the params and image
-// params. 
+// params.
 vector<const void *> Pipeline::prepare_jit_call_arguments(Realization dst, const Target &target) {
     user_assert(defined()) << "Can't realize an undefined Pipeline\n";
 

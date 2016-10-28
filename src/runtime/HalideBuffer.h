@@ -130,7 +130,7 @@ class Buffer {
     AllocationHeader *alloc = nullptr;
 
     /** True if T is of type void */
-    static const bool T_is_void = std::is_same<T, void>::value;
+    static const bool T_is_void = std::is_same<typename std::remove_const<T>::type, void>::value;
 
     /** T unless T is void, in which case uint8_t. Useful for
      * providing return types for operator() */
@@ -144,7 +144,7 @@ class Buffer {
     /** Get the Halide type of T. Callers should not use the result if
      * T is void. */
     static halide_type_t static_halide_type() {
-        return halide_type_of<not_void_T>();
+        return halide_type_of<typename std::remove_cv<not_void_T>::type>();
     }
 
     /** Increment the reference count of any owned allocation */
@@ -167,6 +167,7 @@ class Buffer {
                 fn(alloc);
             }
             alloc = nullptr;
+            buf.host = nullptr;
         }
     }
 
@@ -407,15 +408,17 @@ public:
     /** Fail an assertion at runtime or compile-time if an Buffer<T, D>
      * cannot be constructed from some other Buffer type. */
     template<typename T2, int D2>
-    void assert_can_convert_from(const Buffer<T2, D2> &other) {
-        static_assert((std::is_same<typename std::remove_const<T>::type, T2>::value ||
-                       T_is_void ||
-                       std::is_same<T2, void>::value),
+    static void assert_can_convert_from(const Buffer<T2, D2> &other) {
+        static_assert((!std::is_const<T2>::value || std::is_const<T>::value),
+                      "Can't convert from a Buffer<const T> to a Buffer<T>");
+        static_assert(std::is_same<typename std::remove_const<T>::type,
+                                   typename std::remove_const<T2>::type>::value ||
+                      T_is_void || Buffer<T2, D2>::T_is_void,
                       "type mismatch constructing Buffer");
         if (D < D2) {
             assert(other.dimensions() <= D);
         }
-        if (std::is_same<T2, void>::value && !T_is_void) {
+        if (Buffer<T2, D2>::T_is_void && !T_is_void) {
             assert(other.ty == static_halide_type());
         }
     }
@@ -466,9 +469,6 @@ public:
     template<typename T2, int D2>
     Buffer<T, D> &operator=(const Buffer<T2, D2> &other) {
         assert_can_convert_from(other);
-        buf = other.buf;
-        ty = other.ty;
-        dims = other.dims;
         if (alloc != other.alloc) {
             // Drop existing allocation
             decref();
@@ -476,13 +476,13 @@ public:
             alloc = other.alloc;
             incref();
         }
+        ty = other.ty;
+        dims = other.dims;
+        buf = other.buf;
         return *this;
     }
 
     Buffer<T, D> &operator=(const Buffer<T, D> &other) {
-        buf = other.buf;
-        ty = other.ty;
-        dims = other.dims;
         if (alloc != other.alloc) {
             // Drop existing allocation
             decref();
@@ -490,6 +490,9 @@ public:
             alloc = other.alloc;
             incref();
         }
+        buf = other.buf;
+        ty = other.ty;
+        dims = other.dims;
         return *this;
     }
 
@@ -499,9 +502,6 @@ public:
     template<typename T2, int D2>
     Buffer<T, D> &operator=(Buffer<T2, D2> &&other) {
         assert_can_convert_from(other);
-        buf = other.buf;
-        ty = other.ty;
-        dims = other.dims;
         if (alloc != other.alloc) {
             // Drop existing allocation
             decref();
@@ -509,13 +509,13 @@ public:
             alloc = other.alloc;
             other.alloc = nullptr;
         }
+        buf = other.buf;
+        ty = other.ty;
+        dims = other.dims;
         return *this;
     }
 
     Buffer<T, D> &operator=(Buffer<T, D> &&other) {
-        buf = other.buf;
-        ty = other.ty;
-        dims = other.dims;
         if (alloc != other.alloc) {
             // Drop existing allocation
             decref();
@@ -523,6 +523,9 @@ public:
             alloc = other.alloc;
             other.alloc = nullptr;
         }
+        buf = other.buf;
+        ty = other.ty;
+        dims = other.dims;
         return *this;
     }
 
@@ -566,22 +569,29 @@ public:
         buf.host = (uint8_t *)((uintptr_t)(unaligned_ptr + alignment - 1) & ~(alignment - 1));
     }
 
+    /** Drop reference to any owned memory, freeing it. Retains the
+     * shape of the buffer. */
+    void deallocate() {
+        decref();
+    }
+
     /** Allocate a new image of the given size with a runtime
      * type. Only used when you do know what size you want but you
      * don't know statically what type the elements are. Pass zeroes
      * to make a buffer suitable for bounds query calls. */
-    template<typename ...Args>
-    Buffer(halide_type_t t, int first, Args&&... rest) : ty(t) {
+    template<typename ...Args,
+             typename = typename std::enable_if<AllInts<Args...>::value>::type>
+    Buffer(halide_type_t t, int first, Args... rest) : ty(t) {
         if (!T_is_void) {
             assert(static_halide_type() == t);
         }
         static_assert(sizeof...(rest) < D,
                       "Too many arguments to constructor. Use Buffer<T, D>, "
                       "where D is at least the desired number of dimensions");
-        initialize_shape(0, first, int(rest)...);
+        initialize_shape(0, first, rest...);
         buf.elem_size = ty.bytes();
         dims = 1 + (int)(sizeof...(rest));
-        if (!any_zero(first, int(rest)...)) {
+        if (!any_zero(first, rest...)) {
             check_overflow();
             allocate();
         }
@@ -590,17 +600,18 @@ public:
 
     /** Allocate a new image of the given size. Pass zeroes to make a
      * buffer suitable for bounds query calls. */
-    template<typename ...Args>
-    Buffer(int first, Args&&... rest) : ty(static_halide_type()) {
+    template<typename ...Args,
+             typename = typename std::enable_if<AllInts<Args...>::value>::type>
+    Buffer(int first, Args... rest) : ty(static_halide_type()) {
         static_assert(!T_is_void,
                       "To construct an Buffer<void>, pass a halide_type_t as the first argument to the constructor");
         static_assert(sizeof...(rest) < D,
                       "Too many arguments to constructor. Use Buffer<T, D>, "
                       "where D is at least the desired number of dimensions");
-        initialize_shape(0, first, int(rest)...);
+        initialize_shape(0, first, rest...);
         buf.elem_size = ty.bytes();
         dims = 1 + (int)(sizeof...(rest));
-        if (!any_zero(first, int(rest)...)) {
+        if (!any_zero(first, rest...)) {
             check_overflow();
             allocate();
         }
@@ -622,7 +633,7 @@ public:
     }
 
     /** Make an Buffer that refers to a statically sized array. Does not
-     * take ownership of the data. */
+     * take ownership of the data, and does not set the host_dirty flag. */
     template<typename Array, size_t N>
     explicit Buffer(Array (&vals)[N]) {
         dims = dimensionality_of_array(vals);
@@ -630,13 +641,14 @@ public:
         ty = scalar_type_of_array(vals);
         buf.elem_size = ty.bytes();
         buf.host = (uint8_t *)vals;
-        buf.host_dirty = true;
     }
 
     /** Initialize an Buffer of runtime type from a pointer and some
      * sizes. Assumes dense row-major packing and a min coordinate of
-     * zero. Does not take ownership of the data. */
-    template<typename ...Args>
+     * zero. Does not take ownership of the data and does not set the
+     * host_dirty flag. */
+    template<typename ...Args,
+             typename = typename std::enable_if<AllInts<Args...>::value>::type>
     explicit Buffer(halide_type_t t, void *data, int first, Args&&... rest) {
         if (!T_is_void) {
             assert(static_halide_type() == t);
@@ -649,28 +661,27 @@ public:
         buf.elem_size = ty.bytes();
         dims = 1 + (int)(sizeof...(rest));
         buf.host = (uint8_t *)data;
-        buf.host_dirty = true;
     }
 
     /** Initialize an Buffer from a pointer and some sizes. Assumes
      * dense row-major packing and a min coordinate of zero. Does not
-     * take ownership of the data. */
-    template<typename ...Args>
+     * take ownership of the data and does not set the host_dirty flag. */
+    template<typename ...Args,
+             typename = typename std::enable_if<AllInts<Args...>::value>::type>
     explicit Buffer(T *data, int first, Args&&... rest) {
         static_assert(sizeof...(rest) < D,
                       "Too many arguments to constructor. Use Buffer<T, D>, "
                       "where D is at least the desired number of dimensions");
         ty = halide_type_of<typename std::remove_cv<T>::type>();
         initialize_shape(0, first, int(rest)...);
-        buf.elem_size = halide_type_of<T>().bytes();
+        buf.elem_size = ty.bytes();
         dims = 1 + (int)(sizeof...(rest));
         buf.host = (uint8_t *)data;
-        buf.host_dirty = true;
     }
 
     /** Initialize an Buffer from a pointer to the min coordinate and
      * an array describing the shape.  Does not take ownership of the
-     * data. */
+     * data, and does not set the host_dirty flag. */
     explicit Buffer(halide_type_t t, void *data, int d, const halide_dimension_t *shape) {
         if (!T_is_void) {
             assert(static_halide_type() == t);
@@ -684,12 +695,11 @@ public:
         }
         buf.elem_size = ty.bytes();
         buf.host = (uint8_t *)data;
-        buf.host_dirty = true;
     }
 
     /** Initialize an Buffer from a pointer to the min coordinate and
      * an array describing the shape.  Does not take ownership of the
-     * data. */
+     * data and does not set the host_dirty flag. */
     explicit Buffer(T *data, int d, const halide_dimension_t *shape) {
         ty = halide_type_of<typename std::remove_cv<T>::type>();
         dims = d;
@@ -698,9 +708,8 @@ public:
             buf.extent[i] = shape[i].extent;
             buf.stride[i] = shape[i].stride;
         }
-        buf.elem_size = halide_type_of<T>().bytes();
+        buf.elem_size = ty.bytes();
         buf.host = (uint8_t *)data;
-        buf.host_dirty = true;
     }
 
     /** Destructor. Will release any underlying owned allocation if
@@ -768,10 +777,11 @@ public:
     }
     // @}
 
-    /** Make a new image which is a deep copy of this image. Use crop
-     * or slice followed by copy to make a copy of only a portion of
-     * the image. The new image uses the same memory layout as the
-     * original, with holes compacted away. */
+    /** Make a new image which is a deep copy of this image using the
+     * minimum number of calls to memcpy. Use crop or slice followed
+     * by copy to make a copy of only a portion of the image. The new
+     * image uses the same memory layout as the original, with holes
+     * compacted away. */
     Buffer<T, D> copy(void *(*allocate_fn)(size_t) = nullptr,
                      void (*deallocate_fn)(void *) = nullptr) const {
         Buffer<T, D> src = *this;
@@ -796,9 +806,9 @@ public:
         Buffer<T, D> src_slice = src;
         Buffer<T, D> dst_slice = dst;
         int64_t slice_size = 1;
-        while (src_slice.dimensions && src_slice.dim(0).stride() == slice_size) {
+        while (src_slice.dimensions() && src_slice.dim(0).stride() == slice_size) {
             assert(dst_slice.dim(0).stride() == slice_size);
-            slice_size *= src_slice.dim(0).stride();
+            slice_size *= src_slice.dim(0).extent();
             src_slice = src_slice.sliced(0, src_slice.dim(0).min());
             dst_slice = dst_slice.sliced(0, dst_slice.dim(0).min());
         }
@@ -816,6 +826,65 @@ public:
         }
 
         return dst;
+    }
+
+    /** Fill a Buffer with the values at the same coordinates in
+     * another Buffer using the minimum number of calls to
+     * memcpy. Restricts itself to coordinates contained within the
+     * intersection of the two buffers. If the two Buffers are not in
+     * the same coordinate system, you will need to translate the
+     * argument Buffer first. E.g. if you're blitting a sprite onto a
+     * framebuffer, you'll want to translate the sprite to the correct
+     * location first like so: \code
+     * framebuffer.copy_from(sprite.translated({x, y})); \endcode
+    */
+    template<typename T2, int D2>
+    void copy_from(const Buffer<T2, D2> &other) {
+        assert_can_convert_from(other);
+        Buffer<T, D> src(*this), dst(other);
+
+        assert(src.dimensions() == dst.dimensions());
+
+        // Trim the copy to the region in common
+        for (int i = 0; i < dimensions(); i++) {
+            int min_coord = std::max(dst.dim(i).min(), src.dim(i).min());
+            int max_coord = std::min(dst.dim(i).max(), src.dim(i).max());
+            if (max_coord < min_coord) {
+                // The buffers do not overlap.
+                return;
+            }
+            dst.crop(i, min_coord, max_coord - min_coord + 1);
+            src.crop(i, min_coord, max_coord - min_coord + 1);
+        }
+
+        // Reorder the dimensions of dst to have strides in increasing
+        // order. Apply the same transposition to src.
+        for (int i = dimensions()-1; i > 0; i--) {
+            for (int j = i; j > 0; j--) {
+                if (dst.dim(j-1).stride() > dst.dim(j).stride()) {
+                    dst.transpose(j-1, j);
+                    src.transpose(j-1, j);
+                }
+            }
+        }
+
+        // Concatenate dense inner dimensions into contiguous memcpy tasks
+        Buffer<T, D> src_slice = src;
+        Buffer<T, D> dst_slice = dst;
+        int64_t slice_size = 1;
+        while (dst_slice.dimensions() &&
+               dst_slice.dim(0).stride() == slice_size &&
+               src_slice.dim(0).stride() == slice_size) {
+            slice_size *= dst_slice.dim(0).extent();
+            dst_slice = dst_slice.sliced(0, dst_slice.dim(0).min());
+            src_slice = src_slice.sliced(0, dst_slice.dim(0).min());
+        }
+        slice_size *= buf.elem_size;
+
+        // Do the memcpys
+        src_slice.for_each_element([&](const int *pos) {
+            memcpy(&dst_slice(pos), &src_slice(pos), slice_size);
+        });
     }
 
     /** Make an image that refers to a sub-range of this image along
@@ -892,7 +961,7 @@ public:
 
     /** Translate an image along the first N dimensions */
     void translate(const std::vector<int> &delta) {
-        for (int i = 0; i < delta.size(); i++) {
+        for (size_t i = 0; i < delta.size(); i++) {
             translate(i, delta[i]);
         }
     }
@@ -983,7 +1052,8 @@ public:
     }
 
     /** Add a new dimension with a min of zero and an extent of
-     * one. The new dimension is the last dimension. This is a
+     * one. The stride is the extent of the outermost dimension times
+     * its stride. The new dimension is the last dimension. This is a
      * special case of embed. It requires that the actual number of
      * dimensions is less than template parameter D. */
     void add_dimension() {
@@ -997,6 +1067,16 @@ public:
             buf.stride[dims] = buf.extent[dims-1] * buf.stride[dims-1];
         }
         dims++;
+    }
+
+    /** Add a new dimension with a min of zero, an extent of one, and
+     * the specified stride. The new dimension is the last
+     * dimension. This is a special case of embed. It requires that
+     * the actual number of dimensions is less than template parameter
+     * D. */
+    void add_dimension_with_stride(int s) {
+        add_dimension();
+        buf.stride[dims-1] = s;
     }
 
     /** Call a callable at each location within the image. See
@@ -1024,24 +1104,30 @@ public:
         buf.dev_dirty = v;
     }
 
-    void copy_to_host(void *ctx = nullptr) {
+    int copy_to_host(void *ctx = nullptr) {
         if (device_dirty()) {
-            halide_copy_to_host(ctx, &buf);
+            return halide_copy_to_host(ctx, &buf);
         }
+        return 0;
     }
 
-    void copy_to_device(const struct halide_device_interface *device_interface, void *ctx = nullptr) {
+    int copy_to_device(const struct halide_device_interface *device_interface, void *ctx = nullptr) {
         if (host_dirty()) {
-            halide_copy_to_device(ctx, &buf, device_interface);
+            return halide_copy_to_device(ctx, &buf, device_interface);
         }
+        return 0;
     }
 
-    void device_free(void *ctx = nullptr) {
-        halide_device_free(ctx, &buf);
+    int device_free(void *ctx = nullptr) {
+        return halide_device_free(ctx, &buf);
     }
 
-    void device_sync(void *ctx = nullptr) {
-        halide_device_sync(ctx, &buf);
+    int device_sync(void *ctx = nullptr) {
+        return halide_device_sync(ctx, &buf);
+    }
+
+    bool has_device_allocation() const {
+        return buf.dev;
     }
     // @}
 
@@ -1143,13 +1229,14 @@ public:
     /** Access elements. Use im(...) to get a reference to an element,
      * and use &im(...) to get the address of an element. If you pass
      * fewer arguments than the buffer has dimensions, the rest are
-     * treated as their min coordinate.
+     * treated as their min coordinate. The non-const versions set the
+     * host_dirty flag to true.
      */
     //@{
-    template<typename ...Args>
+    template<typename ...Args,
+             typename = typename std::enable_if<AllInts<Args...>::value>::type>
     ALWAYS_INLINE
-    typename std::enable_if<AllInts<Args...>::value, const not_void_T &>::type
-    operator()(int first, Args... rest) const {
+    const not_void_T &operator()(int first, Args... rest) const {
         static_assert(!T_is_void,
                       "Cannot use operator() on Buffer<void> types");
         return *((const not_void_T *)(address_of(0, first, rest...)));
@@ -1171,10 +1258,10 @@ public:
         return *((const not_void_T *)(address_of(pos)));
     }
 
-    template<typename ...Args>
+    template<typename ...Args,
+             typename = typename std::enable_if<AllInts<Args...>::value>::type>
     ALWAYS_INLINE
-    typename std::enable_if<AllInts<Args...>::value, not_void_T &>::type
-    operator()(int first, Args... rest) {
+    not_void_T &operator()(int first, Args... rest) {
         static_assert(!T_is_void,
                       "Cannot use operator() on Buffer<void> types");
         set_host_dirty();
@@ -1245,8 +1332,8 @@ private:
 public:
 
     /** Set every value in the buffer to the given value */
-    template<typename = std::enable_if<(!T_is_void)>>
     void fill(not_void_T val) {
+        static_assert(!T_is_void, "Can't fill a Buffer of unknown type");
         fill_helper(val);
     }
 

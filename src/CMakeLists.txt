@@ -50,6 +50,8 @@ set(RUNTIME_CPP
   mips_cpu_features
   module_aot_ref_count
   module_jit_ref_count
+  msan
+  msan_stubs
   nacl_host_cpu_count
   noos
   opencl
@@ -298,6 +300,7 @@ set(HEADER_FILES
   Parameter.h
   PartitionLoops.h
   Pipeline.h
+  Prefetch.h
   Profiling.h
   Qualify.h
   RDom.h
@@ -450,6 +453,7 @@ add_library(Halide ${HALIDE_LIBRARY_TYPE}
   PartitionLoops.cpp
   Pipeline.cpp
   PrintLoopNest.cpp
+  Prefetch.cpp
   Profiling.cpp
   Qualify.cpp
   RDom.cpp

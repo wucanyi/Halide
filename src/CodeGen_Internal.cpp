@@ -150,6 +150,9 @@ bool function_takes_user_context(const std::string &name) {
         "halide_openglcompute_run",
         "halide_renderscript_run",
         "halide_metal_run",
+        "halide_msan_annotate_buffer_is_initialized_as_destructor",
+        "halide_msan_annotate_buffer_is_initialized",
+        "halide_msan_annotate_memory_is_initialized",
         "halide_hexagon_initialize_kernels",
         "halide_hexagon_run",
         "halide_hexagon_device_release",
@@ -276,10 +279,13 @@ void get_target_options(const llvm::Module &module, llvm::TargetOptions &options
     options.AllowFPOpFusion = llvm::FPOpFusion::Fast;
     options.UnsafeFPMath = true;
 
+    #if LLVM_VERSION < 40
     #ifndef WITH_NATIVE_CLIENT
     // Turn off approximate reciprocals for division. It's too
-    // inaccurate even for us.
+    // inaccurate even for us. In LLVM 4.0+ this moved to be a
+    // function attribute.
     options.Reciprocals.setDefaults("all", false, 0);
+    #endif
     #endif
 
     options.NoInfsFPMath = true;
@@ -344,6 +350,14 @@ std::unique_ptr<llvm::TargetMachine> make_target_machine(const llvm::Module &mod
                                                 llvm::Reloc::PIC_,
                                                 llvm::CodeModel::Default,
                                                 llvm::CodeGenOpt::Aggressive));
+}
+
+void set_function_attributes_for_target(llvm::Function *fn, Target t) {
+    #if LLVM_VERSION >= 40
+    // Turn off approximate reciprocals for division. It's too
+    // inaccurate even for us.
+    fn->addFnAttr("reciprocal-estimates", "none");
+    #endif
 }
 
 }
