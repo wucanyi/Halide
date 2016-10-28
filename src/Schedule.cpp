@@ -127,13 +127,11 @@ struct ScheduleContents {
                 b.remainder = mutator->mutate(b.remainder);
             }
         }
-
         for (Prefetch &p : prefetches) {
             if (p.offset.defined()) {
                 p.offset = mutator->mutate(p.offset);
-	    }
-	}
-
+            }
+        }
         for (Bound &b : estimates) {
             if (b.min.defined()) {
                 b.min = mutator->mutate(b.min);
@@ -255,7 +253,7 @@ const std::vector<Prefetch> &Schedule::prefetches() const {
 const std::vector<Bound> &Schedule::estimates() const {
     return contents->estimates;
 }
-
+ 
 std::vector<ReductionVariable> &Schedule::rvars() {
     return contents->rvars;
 }
@@ -348,7 +346,7 @@ void Schedule::accept(IRVisitor *visitor) const {
         }
         if (b.extent.defined()) {
             b.extent.accept(visitor);
-	}
+        }
     }
 }
 
@@ -360,4 +358,3 @@ void Schedule::mutate(IRMutator *mutator) {
 
 }  // namespace Internal
 }  // namespace Halide
-

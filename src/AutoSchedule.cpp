@@ -85,7 +85,7 @@ bool check_estimates_on_outputs(const vector<Function> &outputs) {
             break;
         }
         const vector<string> &vars = out.args();
-	// Check if the estimate for each dimension is available and it is an integer.
+        // Check if the estimate for each dimension is available and it is an integer.
         for (uint32_t i = 0; i < estimates.size(); i++) {
             if (std::find(vars.begin(), vars.end(), estimates[i].var) == vars.end() ||
                 !((estimates[i].min.as<IntImm>()) && (estimates[i].extent.as<IntImm>()))) {
@@ -212,7 +212,7 @@ void merge_and_queue_regions(deque<pair<FStage, DimBounds>> &f_queue,
         }
 
         // Skip adding the current region into to the queue if the function
-	    // is not in prods.
+            // is not in prods.
         if (prods.find(reg.first) == prods.end()) {
             continue;
         }
@@ -272,8 +272,8 @@ DependenceAnalysis::regions_required(Function f, int stage_num,
         // on the inputs to the extern function if available.
         //
         // TODO: Query the extern function for bounds of the functions which it
-	    // it depends on. This can be done by calling the extern func in the
-	    // bounds query mode.
+            // it depends on. This can be done by calling the extern func in the
+            // bounds query mode.
         if (s.func.has_extern_definition()) {
             for (const ExternFuncArgument &arg : s.func.extern_arguments()) {
                 if (arg.is_func()) {
