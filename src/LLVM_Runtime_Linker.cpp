@@ -31,23 +31,24 @@ std::unique_ptr<llvm::Module> parse_bitcode_file(llvm::StringRef buf, llvm::LLVM
 
 }  // namespace
 
-#define DECLARE_INITMOD(mod)                                                              \
-    extern "C" unsigned char halide_internal_initmod_##mod[];                             \
-    extern "C" int halide_internal_initmod_##mod##_length;                                \
-    std::unique_ptr<llvm::Module> get_initmod_##mod(llvm::LLVMContext *context) {         \
-        llvm::StringRef sb = llvm::StringRef((const char *)halide_internal_initmod_##mod, \
-                                             halide_internal_initmod_##mod##_length);     \
-        return parse_bitcode_file(sb, context, #mod);                                    \
+#define DECLARE_INITMOD(mod)                                            \
+    extern "C" unsigned char _binary_initmod_##mod##_bc_start[];        \
+    extern "C" unsigned char _binary_initmod_##mod##_bc_end[];          \
+    std::unique_ptr<llvm::Module> get_initmod_##mod(llvm::LLVMContext *context) { \
+        size_t size = ((const char *)_binary_initmod_##mod##_bc_end -   \
+                       (const char *)_binary_initmod_##mod##_bc_start); \
+        llvm::StringRef sb = llvm::StringRef((const char *)_binary_initmod_##mod##_bc_start, size); \
+        return parse_bitcode_file(sb, context, #mod);                   \
     }
 
 #define DECLARE_NO_INITMOD(mod)                                                      \
-  std::unique_ptr<llvm::Module> get_initmod_##mod(llvm::LLVMContext *, bool, bool) { \
-        user_error << "Halide was compiled without support for this target\n";       \
-        return std::unique_ptr<llvm::Module>();                                      \
-    }                                                                                \
-  std::unique_ptr<llvm::Module> get_initmod_##mod##_ll(llvm::LLVMContext *) {        \
-        user_error << "Halide was compiled without support for this target\n";       \
-        return std::unique_ptr<llvm::Module>();                                      \
+    std::unique_ptr<llvm::Module> get_initmod_##mod(llvm::LLVMContext *, bool, bool) { \
+        user_error << "Halide was compiled without support for this target\n"; \
+        return std::unique_ptr<llvm::Module>();                         \
+    }                                                                   \
+    std::unique_ptr<llvm::Module> get_initmod_##mod##_ll(llvm::LLVMContext *) { \
+        user_error << "Halide was compiled without support for this target\n"; \
+        return std::unique_ptr<llvm::Module>();                         \
     }
 
 #define DECLARE_CPP_INITMOD(mod) \
@@ -173,9 +174,9 @@ DECLARE_NO_INITMOD(aarch64_cpu_features)
 #endif  // WITH_AARCH64
 
 #ifdef WITH_PTX
-DECLARE_LL_INITMOD(ptx_compute_20)
-DECLARE_LL_INITMOD(ptx_compute_30)
-DECLARE_LL_INITMOD(ptx_compute_35)
+DECLARE_INITMOD(ptx_compute_20)
+DECLARE_INITMOD(ptx_compute_30)
+DECLARE_INITMOD(ptx_compute_35)
 #endif  // WITH_PTX
 
 #ifdef WITH_X86
@@ -897,15 +898,15 @@ std::unique_ptr<llvm::Module> get_initial_module_for_ptx_device(Target target, l
     // This table is based on the guidance at:
     // http://docs.nvidia.com/cuda/libdevice-users-guide/basic-usage.html#linking-with-libdevice
     if (target.has_feature(Target::CUDACapability35)) {
-        module = get_initmod_ptx_compute_35_ll(c);
+        module = get_initmod_ptx_compute_35(c);
     } else if (target.features_any_of({Target::CUDACapability32,
                                        Target::CUDACapability50})) {
         // For some reason sm_32 and sm_50 use libdevice 20
-        module = get_initmod_ptx_compute_20_ll(c);
+        module = get_initmod_ptx_compute_20(c);
     } else if (target.has_feature(Target::CUDACapability30)) {
-        module = get_initmod_ptx_compute_30_ll(c);
+        module = get_initmod_ptx_compute_30(c);
     } else {
-        module = get_initmod_ptx_compute_20_ll(c);
+        module = get_initmod_ptx_compute_20(c);
     }
     modules.push_back(std::move(module));
 

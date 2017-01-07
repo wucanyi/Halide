@@ -1,12 +1,10 @@
 include(CheckCXXCompilerFlag)
 
 add_executable(build_halide_h ../tools/build_halide_h.cpp)
-add_executable(bitcode2cpp ../tools/bitcode2cpp.cpp)
 
 if (MSVC)
   # disable irrelevant warnings
   target_compile_options(build_halide_h PUBLIC /wd4996)
-  target_compile_options(bitcode2cpp PUBLIC /wd4996)
 endif()
 
 if (MSVC)
@@ -124,6 +122,8 @@ if("${NATIVE_INT_DIR}" STREQUAL "./")
   set(NATIVE_INT_DIR "")
 endif()
 
+file(TO_NATIVE_PATH "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.build/${NATIVE_INT_DIR}" ABS_NATIVE_INT_DIR)
+
 # Commands to build initial module objects.
 file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.build")
 set (CXX_WARNING_FLAGS -Wall -Werror -Wno-unused-function -Wcast-qual)
@@ -147,12 +147,12 @@ function(add_runtime_modules TARGET_RUNTIME_FILES TARGET_RUNTIME_DIR)
         set(TARGET "le64-unknown-unknown-unknown")
       ENDIF()
       set(SOURCE "${TARGET_RUNTIME_DIR}${i}.cpp")
-      set(LL_D "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.build/${NATIVE_INT_DIR}initmod.${i}_${j}_debug.ll")
-      set(LL "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.build/${NATIVE_INT_DIR}initmod.${i}_${j}.ll")
-      set(BC_D "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.build/${NATIVE_INT_DIR}initmod.${i}_${j}_debug.bc")
-      set(BC "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.build/${NATIVE_INT_DIR}initmod.${i}_${j}.bc")
-      set(INITMOD_D "${INITMOD_PREFIX}${i}_${j}_debug.cpp")
-      set(INITMOD "${INITMOD_PREFIX}${i}_${j}.cpp")
+      set(LL_D "${ABS_NATIVE_INT_DIR}initmod.${i}_${j}_debug.ll")
+      set(LL "${ABS_NATIVE_INT_DIR}initmod.${i}_${j}.ll")
+      set(BC_D "initmod.${i}_${j}_debug.bc")
+      set(BC "initmod.${i}_${j}.bc")
+      set(INITMOD_D "${ABS_NATIVE_INT_DIR}${INITMOD_PREFIX}${i}_${j}_debug.o")
+      set(INITMOD "${ABS_NATIVE_INT_DIR}${INITMOD_PREFIX}${i}_${j}.o")
 
       add_custom_command(OUTPUT "${LL_D}"
                          DEPENDS "${SOURCE}"
@@ -168,25 +168,27 @@ function(add_runtime_modules TARGET_RUNTIME_FILES TARGET_RUNTIME_DIR)
                          COMMAND ${CLANG} ${CXX_WARNING_FLAGS} -O3 -fno-ms-compatibility -ffreestanding -fno-blocks -fno-exceptions -fno-unwind-tables -m${j} -target "${TARGET}" "-I${TARGET_RUNTIME_DIR}" -DCOMPILING_HALIDE_RUNTIME "-DLLVM_VERSION=${LLVM_VERSION}" -DBITS_${j} -emit-llvm -S "${SOURCE}" -o "${LL}"
                          COMMENT "${SOURCE} -> ${LL}")
 
-      add_custom_command(OUTPUT "${BC_D}"
+      add_custom_command(OUTPUT "${ABS_NATIVE_INT_DIR}${BC_D}"
                          DEPENDS "${LL_D}"
-                         COMMAND "${LLVM_AS}" "${LL_D}" -o "${BC_D}"
+                         COMMAND "${LLVM_AS}" "${LL_D}" -o "${ABS_NATIVE_INT_DIR}${BC_D}"
                          COMMENT "${LL_D} -> ${BC_D}")
-      add_custom_command(OUTPUT "${BC}"
+      add_custom_command(OUTPUT "${ABS_NATIVE_INT_DIR}${BC}"
                          DEPENDS "${LL}"
-                         COMMAND "${LLVM_AS}" "${LL}" -o "${BC}"
+                         COMMAND "${LLVM_AS}" "${LL}" -o "${ABS_NATIVE_INT_DIR}${BC}"
                          COMMENT "${LL} -> ${BC}")
 
-      add_custom_command(OUTPUT "${INITMOD_D}"
-                         DEPENDS "${BC_D}"
-                         COMMAND bitcode2cpp "${i}_${j}_debug" < "${BC_D}" > "${INITMOD_D}"
-                         COMMENT "${BC_D} -> ${INITMOD_D}")
       add_custom_command(OUTPUT "${INITMOD}"
-                         DEPENDS "${BC}"
-                         COMMAND bitcode2cpp "${i}_${j}" < "${BC}" > "${INITMOD}"
+                         DEPENDS "${ABS_NATIVE_INT_DIR}${BC}"
+                         COMMAND ld -r -b binary -o "${INITMOD}" "${BC}"
+                         WORKING_DIRECTORY "${ABS_NATIVE_INT_DIR}"
                          COMMENT "${BC} -> ${INITMOD}")
-      list(APPEND INITIAL_MODULES ${INITMOD})
-      list(APPEND INITIAL_MODULES ${INITMOD_D})
+      add_custom_command(OUTPUT "${INITMOD_D}"
+                         DEPENDS "${ABS_NATIVE_INT_DIR}${BC_D}"
+                         COMMAND ld -r -b binary -o "${INITMOD_D}" "${BC_D}"
+                         WORKING_DIRECTORY "${ABS_NATIVE_INT_DIR}"
+                         COMMENT "${BC_D} -> ${INITMOD}")
+      list(APPEND INITIAL_MODULES "${INITMOD}")
+      list(APPEND INITIAL_MODULES "${INITMOD_D}")
     endforeach()
   endforeach()
   # This seems to be how you return values from functions in cmake.
@@ -198,27 +200,37 @@ add_runtime_modules("${RUNTIME_CPP}" "${NATIVE_RUNTIME_DIR}")
 
 foreach (i ${RUNTIME_LL} )
   set(LL "${NATIVE_RUNTIME_DIR}${i}.ll")
-  set(BC "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.build/${NATIVE_INT_DIR}initmod.${i}.bc")
-  set(INITMOD "${INITMOD_PREFIX}${i}.cpp")
-  add_custom_command(OUTPUT "${BC}"
+  set(BC_DIR "${PROJECT_BINARY_DIR}/${PROJECT_NAME}.build/${NATIVE_INT_DIR}")
+  set(BC "initmod.${i}_ll.bc")
+  set(INITMOD "${ABS_NATIVE_INT_DIR}${INITMOD_PREFIX}${i}.o")
+  add_custom_command(OUTPUT "${ABS_NATIVE_INT_DIR}${BC}"
                      DEPENDS "${LL}"
-                     COMMAND "${LLVM_AS}" "${LL}" -o "${BC}"
+                     COMMAND "${LLVM_AS}" "${LL}" -o "${ABS_NATIVE_INT_DIR}${BC}"
                      COMMENT "${LL} -> ${BC}")
   add_custom_command(OUTPUT "${INITMOD}"
-                     DEPENDS "${BC}"
-                     COMMAND bitcode2cpp ${i}_ll < "${BC}" > "${INITMOD}"
+                     DEPENDS "${ABS_NATIVE_INT_DIR}${BC}"
+                     COMMAND ld -r -b binary -o "${INITMOD}" "${BC}"
+                     WORKING_DIRECTORY "${ABS_NATIVE_INT_DIR}"
                      COMMENT "${BC} -> ${INITMOD}")
   list(APPEND INITIAL_MODULES "${INITMOD}")
 endforeach()
 foreach (i ${RUNTIME_BC} )
-  set(INITMOD "${INITMOD_PREFIX}ptx_${i}.cpp")
+  set(INITMOD "${ABS_NATIVE_INT_DIR}${INITMOD_PREFIX}ptx_${i}.o")
+  set(BC_DIR "${NATIVE_RUNTIME_DIR}nvidia_libdevice_bitcode/")
+  set(BC "initmod_ptx_${i}.bc")
   add_custom_command(OUTPUT "${INITMOD}"
-                     COMMAND bitcode2cpp "ptx_${i}_ll" < "${NATIVE_RUNTIME_DIR}nvidia_libdevice_bitcode/libdevice.${i}.10.bc" > "${INITMOD}"
+                     COMMAND ld -r -b binary -o "${INITMOD}" "${BC}"
+                     WORKING_DIRECTORY "${BC_DIR}"
                      COMMENT "Building initial module ptx_${i}..."
                      VERBATIM)
   list(APPEND INITIAL_MODULES "${INITMOD}")
 endforeach()
 
+SET_SOURCE_FILES_PROPERTIES(
+  ${INITIAL_MODULES}
+  PROPERTIES
+  EXTERNAL_OBJECT true
+  GENERATED true)
 
 set(HEADER_FILES
   AddImageChecks.h
@@ -631,6 +643,5 @@ if (NOT MSVC)
 endif()
 
 add_dependencies(Halide
-  bitcode2cpp
   build_halide_h
 )

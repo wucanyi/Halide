@@ -95,7 +95,7 @@ POWERPC_LLVM_CONFIG_LIB=$(if $(WITH_POWERPC), powerpc, )
 
 PTX_CXX_FLAGS=$(if $(WITH_PTX), -DWITH_PTX=1, )
 PTX_LLVM_CONFIG_LIB=$(if $(WITH_PTX), nvptx, )
-PTX_DEVICE_INITIAL_MODULES=$(if $(WITH_PTX), libdevice.compute_20.10.bc libdevice.compute_30.10.bc libdevice.compute_35.10.bc, )
+PTX_DEVICE_INITIAL_MODULES=$(if $(WITH_PTX), ptx_compute_20.bc ptx_compute_30.bc ptx_compute_35.bc, )
 
 OPENCL_CXX_FLAGS=$(if $(WITH_OPENCL), -DWITH_OPENCL=1, )
 OPENCL_LLVM_CONFIG_LIB=$(if $(WITH_OPENCL), , )
@@ -601,7 +601,7 @@ INITIAL_MODULES = $(RUNTIME_CPP_COMPONENTS:%=$(BUILD_DIR)/initmod.%_32.o) \
                   $(RUNTIME_CPP_COMPONENTS:%=$(BUILD_DIR)/initmod.%_32_debug.o) \
                   $(RUNTIME_CPP_COMPONENTS:%=$(BUILD_DIR)/initmod.%_64_debug.o) \
                   $(RUNTIME_LL_COMPONENTS:%=$(BUILD_DIR)/initmod.%_ll.o) \
-                  $(PTX_DEVICE_INITIAL_MODULES:libdevice.%.bc=$(BUILD_DIR)/initmod_ptx.%_ll.o)
+                  $(PTX_DEVICE_INITIAL_MODULES:ptx_%.bc=$(BUILD_DIR)/initmod_ptx.%.o)
 
 # Add the Hexagon simulator to the rpath on Linux. (Not supported elsewhere, so no else cases.)
 ifeq ($(UNAME), Linux)
@@ -711,21 +711,11 @@ $(BUILD_DIR)/initmod.%_ll.ll: $(SRC_DIR)/runtime/%.ll
 $(BUILD_DIR)/initmod.%.bc: $(BUILD_DIR)/initmod.%.ll $(BUILD_DIR)/llvm_ok
 	$(LLVM_AS) $(BUILD_DIR)/initmod.$*.ll -o $(BUILD_DIR)/initmod.$*.bc
 
-$(BUILD_DIR)/initmod.%.cpp: $(BIN_DIR)/bitcode2cpp $(BUILD_DIR)/initmod.%.bc
-	./$(BIN_DIR)/bitcode2cpp $* < $(BUILD_DIR)/initmod.$*.bc > $@
+$(BUILD_DIR)/initmod_ptx.%.o: $(SRC_DIR)/runtime/nvidia_libdevice_bitcode/initmod_ptx_%.bc
+	cd $(dir $<); $(LD) -r -o "$(CURDIR)/$@" -b binary $(notdir $<)
 
-$(BUILD_DIR)/initmod_ptx.%_ll.cpp: $(BIN_DIR)/bitcode2cpp $(SRC_DIR)/runtime/nvidia_libdevice_bitcode/libdevice.%.bc
-	./$(BIN_DIR)/bitcode2cpp ptx_$(basename $*)_ll < $(SRC_DIR)/runtime/nvidia_libdevice_bitcode/libdevice.$*.bc > $@
-
-$(BIN_DIR)/bitcode2cpp: $(ROOT_DIR)/tools/bitcode2cpp.cpp
-	@-mkdir -p $(BIN_DIR)
-	$(CXX) $< -o $@
-
-$(BUILD_DIR)/initmod_ptx.%_ll.o: $(BUILD_DIR)/initmod_ptx.%_ll.cpp
-	$(CXX) -c $< -o $@ -MMD -MP -MF $(BUILD_DIR)/$*.d -MT $(BUILD_DIR)/$*.o
-
-$(BUILD_DIR)/initmod.%.o: $(BUILD_DIR)/initmod.%.cpp
-	$(CXX) $(BUILD_BIT_SIZE) -c $< -o $@ -MMD -MP -MF $(BUILD_DIR)/$*.d -MT $(BUILD_DIR)/$*.o
+$(BUILD_DIR)/initmod.%.o: $(BUILD_DIR)/initmod.%.bc
+	cd $(dir $<); $(LD) -r -o "$(CURDIR)/$@" -b binary $(notdir $<)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp $(SRC_DIR)/%.h $(BUILD_DIR)/llvm_ok
 	@-mkdir -p $(BUILD_DIR)
