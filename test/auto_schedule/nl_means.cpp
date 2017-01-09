@@ -71,7 +71,7 @@ double run_test(bool auto_schedule) {
             clamp(non_local_means_sum(x, y, c) / non_local_means_sum(x, y, 3), 0.0f, 1.0f);
 
     // Require 3 channels for output.
-    non_local_means.output_buffer().set_min(2, 0).set_extent(2, 3);
+    non_local_means.output_buffer().dim(2).set_bounds(0, 3);
 
     non_local_means.estimate(x, 0, input.width()).estimate(y, 0, input.height()).estimate(c, 0, 3);
 

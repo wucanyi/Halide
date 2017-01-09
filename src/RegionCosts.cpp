@@ -219,7 +219,7 @@ Definition get_stage_definition(const Function &f, int stage_num) {
         return f.definition();
     }
     internal_assert((int)f.updates().size() >= stage_num);
-    return f.updates()[stage_num - 1];
+    return f.update(stage_num - 1);
 }
 
 /* Returns the required bounds of an intermediate stage (f, stage_num) of
