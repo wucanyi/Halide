@@ -272,8 +272,8 @@ DependenceAnalysis::regions_required(Function f, int stage_num,
         // on the inputs to the extern function if available.
         //
         // TODO: Query the extern function for bounds of the functions which it
-            // it depends on. This can be done by calling the extern func in the
-            // bounds query mode.
+        // it depends on. This can be done by calling the extern func in the
+        // bounds query mode.
         if (s.func.has_extern_definition()) {
             for (const ExternFuncArgument &arg : s.func.extern_arguments()) {
                 if (arg.is_func()) {
