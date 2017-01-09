@@ -27,7 +27,7 @@ int main(int argc, char **argv) {
     g.print_loop_nest();
 
     // Run the schedule
-    Image<int> out = p.realize(10);
+    Buffer<int> out = p.realize(10);
 
     printf("Success!\n");
     return 0;

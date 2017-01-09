@@ -40,7 +40,7 @@ double run_test(bool auto_schedule) {
 
     int H = 2560;
     int W = 1536;
-    Image<uint16_t> input(H, W, 3);
+    Buffer<uint16_t> input(H, W, 3);
 
     for (int y = 0; y < input.height(); y++) {
         for (int x = 0; x < input.width(); x++) {
@@ -200,7 +200,7 @@ double run_test(bool auto_schedule) {
     output.print_loop_nest();
 
     // Benchmark the schedule
-    Image<uint16_t> out(input.width(), input.height(), input.channels());
+    Buffer<uint16_t> out(input.width(), input.height(), input.channels());
     double t = benchmark(3, 10, [&]() {
         p.realize(out);
     });

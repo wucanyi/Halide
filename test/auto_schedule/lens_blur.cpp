@@ -32,8 +32,8 @@ double run_test(bool auto_schedule) {
 
     int H = 1920;
     int W = 1024;
-    Image<uint8_t> left_im(H, W, 3);
-    Image<uint8_t> right_im(H, W, 3);
+    Buffer<uint8_t> left_im(H, W, 3);
+    Buffer<uint8_t> right_im(H, W, 3);
 
     for (int y = 0; y < left_im.height(); y++) {
         for (int x = 0; x < left_im.width(); x++) {
@@ -298,7 +298,7 @@ double run_test(bool auto_schedule) {
     final.print_loop_nest();
 
     // Run the schedule
-    Image<float> out(left_im.width(), left_im.height(), 3);
+    Buffer<float> out(left_im.width(), left_im.height(), 3);
     double t = benchmark(3, 10, [&]() {
         p.realize(out);
     });

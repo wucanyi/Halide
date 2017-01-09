@@ -56,7 +56,7 @@ double run_test(bool auto_schedule) {
 
     int H = 1024;
     int W = 2048;
-    Image<float> input(H, W, 3);
+    Buffer<float> input(H, W, 3);
 
     for (int c = 0; c < 3; c++) {
         for (int y = 0; y < input.height(); y++) {
@@ -99,7 +99,7 @@ double run_test(bool auto_schedule) {
     blur.print_loop_nest();
 
     // Run the schedule
-    Image<float> out(1024, 2048, 3);
+    Buffer<float> out(1024, 2048, 3);
     double t = benchmark(3, 10, [&]() {
         p.realize(out);
     });

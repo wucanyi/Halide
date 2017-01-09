@@ -40,7 +40,7 @@ double run_test_1(bool auto_schedule) {
     r.print_loop_nest();
 
     // Run the schedule
-    Image<int> out(1024, 1024, 3);
+    Buffer<int> out(1024, 1024, 3);
     double t = benchmark(3, 10, [&]() {
         p.realize(out);
     });
@@ -53,8 +53,8 @@ double run_test_2(bool auto_schedule) {
 
     int H = 1920;
     int W = 1024;
-    Image<uint8_t> left_im(W, H, 3);
-    Image<uint8_t> right_im(W, H, 3);
+    Buffer<uint8_t> left_im(W, H, 3);
+    Buffer<uint8_t> right_im(W, H, 3);
 
     for (int y = 0; y < left_im.height(); y++) {
         for (int x = 0; x < left_im.width(); x++) {
@@ -90,7 +90,7 @@ double run_test_2(bool auto_schedule) {
     diff.print_loop_nest();
 
     // Run the schedule
-    Image<uint8_t> out(left_im.width(), left_im.height(), 32, 3);
+    Buffer<uint8_t> out(left_im.width(), left_im.height(), 32, 3);
     double t = benchmark(3, 10, [&]() {
         p.realize(out);
     });
@@ -100,7 +100,7 @@ double run_test_2(bool auto_schedule) {
 
 double run_test_3(bool auto_schedule) {
 
-    Image<uint8_t> im(1024, 1028, 14, 14);
+    Buffer<uint8_t> im(1024, 1028, 14, 14);
 
     Var x("x"), y("y"), dx("dx"), dy("dy"), c("c");
 
@@ -130,7 +130,7 @@ double run_test_3(bool auto_schedule) {
     r.print_loop_nest();
 
     // Run the schedule
-    Image<int> out(1024, 1024, 3);
+    Buffer<int> out(1024, 1024, 3);
     double t = benchmark(3, 10, [&]() {
         p.realize(out);
     });

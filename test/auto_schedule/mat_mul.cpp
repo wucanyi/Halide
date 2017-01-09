@@ -5,9 +5,9 @@ using namespace Halide;
 
 double run_test(bool auto_schedule) {
     int size = 1024;
-    Image<float> A(size, size);
-    Image<float> B(size, size);
-    Image<float> C(size, size);
+    Buffer<float> A(size, size);
+    Buffer<float> B(size, size);
+    Buffer<float> C(size, size);
 
     for (int y = 0; y < A.height(); y++) {
         for (int x = 0; x < A.width(); x++) {
@@ -111,7 +111,7 @@ double run_test(bool auto_schedule) {
     out.print_loop_nest();
 
     // Benchmark the schedule
-    Image<float> result(size, size);
+    Buffer<float> result(size, size);
     double t = benchmark(3, 10, [&]() {
         p.realize(result);
     });

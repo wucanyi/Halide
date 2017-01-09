@@ -5,7 +5,7 @@ int main(int argc, char **argv) {
 
     int H = 1000;
     int W = 1000;
-    Image<uint16_t> input(H, W);
+    Buffer<uint16_t> input(H, W);
 
     for (int y = 0; y < input.height(); y++) {
         for (int x = 0; x < input.width(); x++) {
@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
     h.print_loop_nest();
     g.print_loop_nest();
 
-    Image<uint16_t> out_1(999, 999), out_2(999, 999);
+    Buffer<uint16_t> out_1(999, 999), out_2(999, 999);
 
     // Run the schedule
     test.realize({out_1, out_2});

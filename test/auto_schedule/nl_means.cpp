@@ -12,7 +12,7 @@ double run_test(bool auto_schedule) {
 
     int H = 1024;
     int W = 500;
-    Image<float> input(H, W, 3);
+    Buffer<float> input(H, W, 3);
 
     for (int y = 0; y < input.height(); y++) {
         for (int x = 0; x < input.width(); x++) {
@@ -136,7 +136,7 @@ double run_test(bool auto_schedule) {
     non_local_means.print_loop_nest();
 
     // Benchmark the schedule
-    Image<float> out(input.width(), input.height(), input.channels());
+    Buffer<float> out(input.width(), input.height(), input.channels());
     double t = benchmark(3, 10, [&]() {
         p.realize(out);
     });

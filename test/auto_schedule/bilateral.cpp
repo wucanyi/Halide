@@ -6,7 +6,7 @@ using namespace Halide;
 double run_test(bool auto_schedule) {
     int H = 2560;
     int W = 1536;
-    Image<float> input(H, W);
+    Buffer<float> input(H, W);
 
     for (int y = 0; y < input.height(); y++) {
         for (int x = 0; x < input.width(); x++) {
@@ -125,7 +125,7 @@ double run_test(bool auto_schedule) {
     bilateral_grid.print_loop_nest();
 
     // Benchmark the schedule
-    Image<float> out(input.width(), input.height());
+    Buffer<float> out(input.width(), input.height());
     double t = benchmark(3, 10, [&]() {
         p.realize(out);
     });

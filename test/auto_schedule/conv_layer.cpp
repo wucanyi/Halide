@@ -4,14 +4,14 @@ using namespace Halide;
 
 double run_test_1(bool auto_schedule) {
     // TODO: Replace the parameters with the meaningful constant names
-    Image<float> data(128, 128, 64, 4);
+    Buffer<float> data(128, 128, 64, 4);
 
     int pad = 1; // padding required to handle boundaries
 
     Func f_in_bound;
     f_in_bound = BoundaryConditions::repeat_edge(data, 0, 128,
                                                  0, 128);
-    Image<float> W(3, 3, 64, 64), b(64);
+    Buffer<float> W(3, 3, 64, 64), b(64);
 
     Var x, y, z, n;
 
@@ -96,7 +96,7 @@ double run_test_1(bool auto_schedule) {
     f_ReLU.print_loop_nest();
 
     // Run the schedule
-    Image<float> out(128, 128, 64, 4);
+    Buffer<float> out(128, 128, 64, 4);
     double t = benchmark(3, 10, [&]() {
         p.realize(out);
     });
@@ -106,8 +106,8 @@ double run_test_1(bool auto_schedule) {
 
 double run_test_2(bool auto_schedule) {
     // TODO: Replace the parameters with the meaningful constant names
-    Image<float> data(131, 131, 64, 4);
-    Image<float> W(3, 3, 64, 64), b(64);
+    Buffer<float> data(131, 131, 64, 4);
+    Buffer<float> W(3, 3, 64, 64), b(64);
 
     Var x, y, z, n;
 
@@ -176,7 +176,7 @@ double run_test_2(bool auto_schedule) {
     f_ReLU.print_loop_nest();
 
     // Run the schedule
-    Image<float> out(128, 128, 64, 4);
+    Buffer<float> out(128, 128, 64, 4);
     double t = benchmark(3, 10, [&]() {
         p.realize(out);
     });

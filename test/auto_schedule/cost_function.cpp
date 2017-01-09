@@ -5,7 +5,7 @@ int main(int argc, char **argv) {
 
     int H = 6400;
     int W = 4800;
-    Image<uint16_t> input(H, W);
+    Buffer<uint16_t> input(H, W);
 
     for (int y = 0; y < input.height(); y++) {
         for (int x = 0; x < input.width(); x++) {
@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
     stencils[num_stencils - 1].print_loop_nest();
 
     // Run the schedule
-    Image<uint16_t> out = p.realize(6204, 4604);
+    Buffer<uint16_t> out = p.realize(6204, 4604);
 
     printf("Success!\n");
     return 0;

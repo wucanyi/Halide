@@ -5,7 +5,7 @@ int main(int argc, char **argv) {
 
     int H = 800;
     int W = 800;
-    Image<uint16_t> input(H, W);
+    Buffer<uint16_t> input(H, W);
 
     for (int y = 0; y < input.height(); y++) {
         for (int x = 0; x < input.width(); x++) {
@@ -34,7 +34,7 @@ int main(int argc, char **argv) {
     g.print_loop_nest();
 
     // Run the schedule
-    Image<uint16_t> out = p.realize(input.width() - 1, input.height());
+    Buffer<uint16_t> out = p.realize(input.width() - 1, input.height());
 
     return 0;
 }

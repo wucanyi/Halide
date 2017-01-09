@@ -6,7 +6,7 @@ int main(int argc, char **argv) {
     int H = 1024;
     int W = 1024;
 
-    Image<uint16_t> input(H, W, 3);
+    Buffer<uint16_t> input(H, W, 3);
 
     for (int c = 0; c < 3; c++) {
         for (int y = 0; y < input.height(); y++) {
@@ -40,6 +40,6 @@ int main(int argc, char **argv) {
     g.print_loop_nest();
 
     // Run the schedule
-    Image<uint16_t> out = p.realize(input.width() - 2,
+    Buffer<uint16_t> out = p.realize(input.width() - 2,
                                     input.height() - 2, 3);
 }

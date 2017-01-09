@@ -6,7 +6,7 @@ using namespace Halide;
 double run_test(bool auto_schedule) {
     int H = 1920;
     int W = 1024;
-    Image<float> in(H, W, 3);
+    Buffer<float> in(H, W, 3);
 
     for (int y = 0; y < in.height(); y++) {
         for (int x = 0; x < in.width(); x++) {
@@ -93,7 +93,7 @@ double run_test(bool auto_schedule) {
     unsharp.print_loop_nest();
 
     // Benchmark the schedule
-    Image<float> out(in.width(), in.height(), in.channels());
+    Buffer<float> out(in.width(), in.height(), in.channels());
     double t = benchmark(3, 10, [&]() {
         p.realize(out);
     });
