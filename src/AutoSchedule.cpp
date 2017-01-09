@@ -303,7 +303,7 @@ DependenceAnalysis::regions_required(Function f, int stage_num,
                     // If the argument is an image or a buffer the bounds
                     // required are unknown. Create an infinite region of the
                     // correct dimension and update the region map.
-                    BufferPtr buf;
+                    Buffer<> buf;
                     if (arg.is_image_param()) {
                         buf = arg.image_param.get_buffer();
                     } else {
@@ -1930,7 +1930,7 @@ void vectorize_stage(Stage f_handle, Definition def, Function func,
     }
 }
 
-/* Reorder the dimensions to preserve spatial locality. This function 
+/* Reorder the dimensions to preserve spatial locality. This function
  * checks the stride of the access for each access. The dimensions of
  * the loop are reordered such that the dimension with the smallest
  * access strides is innermost. Takes the strides along each dimension
@@ -1962,7 +1962,7 @@ void reorder_dims(Stage f_handle, Definition def,
         }
 
         // Check if the stride of the pure dimension is smaller than
-        // the first reduction dimension that has not been assigned 
+        // the first reduction dimension that has not been assigned
         // an order yet.
         int64_t min_impure_stride = std::numeric_limits<int64_t>::max();
         string min_impure_var;
@@ -1976,7 +1976,7 @@ void reorder_dims(Stage f_handle, Definition def,
                     min_impure_var = var_name;
                 }
                 // Reduction dimensions cannot be reordered relative to
-                // each other. Stop after encountering the first reduction 
+                // each other. Stop after encountering the first reduction
                 // dimension.
                 break;
             }

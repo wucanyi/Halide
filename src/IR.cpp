@@ -229,7 +229,7 @@ Expr Select::make(Expr condition, Expr true_value, Expr false_value) {
     return node;
 }
 
-Expr Load::make(Type type, std::string name, Expr index, BufferPtr image, Parameter param) {
+Expr Load::make(Type type, std::string name, Expr index, Buffer<> image, Parameter param) {
     internal_assert(index.defined()) << "Load of undefined\n";
     internal_assert(type.lanes() == index.type().lanes()) << "Vector lanes of Load must match vector lanes of index\n";
 
@@ -490,9 +490,18 @@ Stmt Evaluate::make(Expr v) {
     return node;
 }
 
+Expr Call::make(Function func, const std::vector<Expr> &args, int idx) {
+    internal_assert(idx >= 0 &&
+                    idx < func.outputs())
+        << "Value index out of range in call to halide function\n";
+    internal_assert(func.has_pure_definition() || func.has_extern_definition())
+        << "Call to undefined halide function\n";
+    return make(func.output_types()[(size_t)idx], func.name(), args, Halide, func.get_contents(), idx, Buffer<>(), Parameter());
+}
+
 Expr Call::make(Type type, std::string name, const std::vector<Expr> &args, CallType call_type,
                 IntrusivePtr<FunctionContents> func, int value_index,
-                BufferPtr image, Parameter param) {
+                Buffer<> image, Parameter param) {
     for (size_t i = 0; i < args.size(); i++) {
         internal_assert(args[i].defined()) << "Call of undefined\n";
     }
@@ -522,7 +531,7 @@ Expr Call::make(Type type, std::string name, const std::vector<Expr> &args, Call
     return node;
 }
 
-Expr Variable::make(Type type, std::string name, BufferPtr image, Parameter param, ReductionDomain reduction_domain) {
+Expr Variable::make(Type type, std::string name, Buffer<> image, Parameter param, ReductionDomain reduction_domain) {
     internal_assert(!name.empty());
     Variable *node = new Variable;
     node->type = type;
@@ -626,6 +635,8 @@ Call::ConstString Call::call_cached_indirect_function = "call_cached_indirect_fu
 Call::ConstString Call::prefetch = "prefetch";
 Call::ConstString Call::prefetch_2d = "prefetch_2d";
 Call::ConstString Call::signed_integer_overflow = "signed_integer_overflow";
+Call::ConstString Call::predicated_store = "predicated_store";
+Call::ConstString Call::predicated_load = "predicated_load";
 Call::ConstString Call::indeterminate_expression = "indeterminate_expression";
 Call::ConstString Call::bool_to_mask = "bool_to_mask";
 Call::ConstString Call::cast_mask = "cast_mask";

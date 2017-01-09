@@ -185,7 +185,9 @@ extern halide_free_t halide_set_custom_free(halide_free_t user_free);
 
 /** Halide calls these functions to interact with the underlying
  * system runtime functions. To replace in AOT code on platforms that
- * support weak linking, define these functions yourself.
+ * support weak linking, define these functions yourself, or use
+ * the halide_set_custom_load_library() and halide_set_custom_get_library_symbol()
+ * functions. In JIT-compiled code, use JITSharedRuntime::set_default_handlers().
  *
  * halide_load_library and halide_get_library_symbol are equivalent to
  * dlopen and dlsym. halide_get_symbol(sym) is equivalent to
@@ -195,6 +197,12 @@ extern halide_free_t halide_set_custom_free(halide_free_t user_free);
 extern void *halide_get_symbol(const char *name);
 extern void *halide_load_library(const char *name);
 extern void *halide_get_library_symbol(void *lib, const char *name);
+typedef void *(*halide_get_symbol_t)(const char *name);
+typedef void *(*halide_load_library_t)(const char *name);
+typedef void *(*halide_get_library_symbol_t)(void *lib, const char *name);
+extern halide_get_symbol_t halide_set_custom_get_symbol(halide_get_symbol_t user_get_symbol);
+extern halide_load_library_t halide_set_custom_load_library(halide_load_library_t user_load_library);
+extern halide_get_library_symbol_t halide_set_custom_get_library_symbol(halide_get_library_symbol_t user_get_library_symbol);
 //@}
 
 /** Called when debug_to_file is used inside %Halide code.  See
@@ -271,8 +279,12 @@ struct halide_type_t {
                 lanes == other.lanes);
     }
 
+    bool operator!=(const halide_type_t &other) const {
+        return !(*this == other);
+    }
+
     /** Size in bytes for a single element, even if width is not 1, of this type. */
-    size_t bytes() const { return (bits + 7) / 8; }
+    int bytes() const { return (bits + 7) / 8; }
 #endif
 };
 
@@ -291,7 +303,7 @@ struct halide_trace_event {
     const char *func;
     enum halide_trace_event_code event;
     int32_t parent_id;
-    halide_type_t type;
+    struct halide_type_t type;
     int32_t value_index;
     void *value;
     int32_t dimensions;
@@ -358,12 +370,12 @@ extern int halide_shutdown_trace();
 /** All Halide GPU or device backend implementations much provide an interface
  * to be used with halide_device_malloc, etc.
  */
-struct halide_device_interface;
+struct halide_device_interface_t;
 
 /** Release all data associated with the current GPU backend, in particular
  * all resources (memory, texture, context handles) allocated by Halide. Must
  * be called explicitly when using AOT compilation. */
-extern void halide_device_release(void *user_context, const struct halide_device_interface *device_interface);
+extern void halide_device_release(void *user_context, const struct halide_device_interface_t *device_interface);
 
 /** Copy image data from device memory to host memory. This must be called
  * explicitly to copy back the results of a GPU-based filter. */
@@ -376,16 +388,51 @@ extern int halide_copy_to_host(void *user_context, struct buffer_t *buf);
  * used. Otherwise if the dev field is 0 and interface is NULL, an
  * error is returned. */
 extern int halide_copy_to_device(void *user_context, struct buffer_t *buf,
-                                 const struct halide_device_interface *device_interface);
+                                 const struct halide_device_interface_t *device_interface);
 
 /** Wait for current GPU operations to complete. Calling this explicitly
  * should rarely be necessary, except maybe for profiling. */
 extern int halide_device_sync(void *user_context, struct buffer_t *buf);
 
 /** Allocate device memory to back a buffer_t. */
-extern int halide_device_malloc(void *user_context, struct buffer_t *buf, const struct halide_device_interface *device_interface);
+extern int halide_device_malloc(void *user_context, struct buffer_t *buf, const struct halide_device_interface_t *device_interface);
 
+/** Free device memory. */
 extern int halide_device_free(void *user_context, struct buffer_t *buf);
+
+/** Get a pointer to halide_device_free if a Halide runtime has been
+ * linked in. Returns null if it has not. This requires a different
+ * mechanism on different platforms. */
+typedef int (*halide_device_free_t)(void *, struct buffer_t *);
+#ifdef _MSC_VER
+extern const __declspec(selectany) void *halide_dummy_device_free = NULL;
+extern int halide_weak_device_free(void *user_context, struct buffer_t *buf);
+// The following pragma tells the windows linker to make
+// halide_device_free_weak the same symbol as halide_dummy_device_free
+// if it can't resolve halide_weak_device_free normally
+#ifdef _WIN64
+#pragma comment(linker, "/alternatename:halide_weak_device_free=halide_dummy_device_free")
+#else
+#pragma comment(linker, "/alternatename:_halide_weak_device_free=_halide_dummy_device_free")
+#endif
+inline halide_device_free_t halide_get_device_free_fn() {
+    if ((const void **)(&halide_weak_device_free) == &halide_dummy_device_free) {
+        return NULL;
+    } else {
+        return &halide_weak_device_free;
+    }
+};
+#elif __MINGW32__
+inline halide_device_free_t halide_get_device_free_fn() {
+    // There is no workable mechanism for doing this that we know of on mingw.
+    return &halide_device_free;
+}
+#else
+extern __attribute__((weak)) int halide_weak_device_free(void *user_context, struct buffer_t *buf);
+inline halide_device_free_t halide_get_device_free_fn() {
+    return &halide_weak_device_free;
+}
+#endif
 
 /** Selects which gpu device to use. 0 is usually the display
  * device. If never called, Halide uses the environment variable
@@ -490,7 +537,7 @@ extern int halide_create_temp_file(void *user_context,
 extern void halide_msan_annotate_memory_is_initialized(void *user_context, const void *ptr, uint64_t len);
 
 /** Mark the data pointed to by the buffer_t as initialized (but *not* the buffer_t itself),
- * using halide_msan_annotate_memory_is_initialized() for marking. 
+ * using halide_msan_annotate_memory_is_initialized() for marking.
  *
  * The default implementation takes pains to only mark the active memory ranges
  * (skipping padding), and sorting into ranges to always mark the smallest number of
@@ -613,6 +660,9 @@ enum halide_error_code_t {
      * too small to store all the values of a producer needed by the
      * consumer. */
     halide_error_code_fold_factor_too_small = -26,
+
+    /** User-specified require() expression was not satisfied. */
+    halide_error_code_requirement_failed = -27,
 };
 
 /** Halide calls the functions below on various error conditions. The
@@ -670,6 +720,7 @@ extern int halide_error_bad_fold(void *user_context, const char *func_name, cons
                                  const char *loop_name);
 extern int halide_error_fold_factor_too_small(void *user_context, const char *func_name, const char *var_name,
                                               int fold_factor, const char *loop_name, int required_extent);
+extern int halide_error_requirement_failed(void *user_context, const char *condition, const char *message);
 
 // @}
 
@@ -706,7 +757,7 @@ typedef enum halide_target_feature_t {
     halide_target_feature_opengl = 21,  ///< Enable the OpenGL runtime.
     halide_target_feature_openglcompute = 22, ///< Enable OpenGL Compute runtime.
 
-    halide_target_feature_renderscript = 23, ///< Enable the Renderscript runtime.
+    halide_target_feature_unused_23 = 23, ///< Unused. (Formerly: Enable the RenderScript runtime.)
 
     halide_target_feature_user_context = 24,  ///< Generated code takes a user_context pointer as first argument
 
@@ -728,7 +779,11 @@ typedef enum halide_target_feature_t {
     halide_target_feature_fuzz_float_stores = 35, ///< On every floating point store, set the last bit of the mantissa to zero. Pipelines for which the output is very different with this feature enabled may also produce very different output on different processors.
     halide_target_feature_soft_float_abi = 36, ///< Enable soft float ABI. This only enables the soft float ABI calling convention, which does not necessarily use soft floats.
     halide_target_feature_msan = 37, ///< Enable hooks for MSAN support.
-    halide_target_feature_end = 38 ///< A sentinel. Every target is considered to have this feature, and setting this feature does nothing.
+    halide_target_feature_avx512 = 38, ///< Enable the base AVX512 subset supported by all AVX512 architectures. The specific feature sets are AVX-512F and AVX512-CD. See https://en.wikipedia.org/wiki/AVX-512 for a description of each AVX subset.
+    halide_target_feature_avx512_knl = 39, ///< Enable the AVX512 features supported by Knight's Landing chips, such as the Xeon Phi x200. This includes the base AVX512 set, and also AVX512-CD and AVX512-ER.
+    halide_target_feature_avx512_skylake = 40, ///< Enable the AVX512 features supported by Skylake Xeon server processors. This adds AVX512-VL, AVX512-BW, and AVX512-DQ to the base set. The main difference from the base AVX512 set is better support for small integer ops. Note that this does not include the Knight's Landing features. Note also that these features are not available on Skylake desktop and mobile processors.
+    halide_target_feature_avx512_cannonlake = 41, ///< Enable the AVX512 features expected to be supported by future Cannonlake processors. This includes all of the Skylake features, plus AVX512-IFMA and AVX512-VBMI.
+    halide_target_feature_end = 42 ///< A sentinel. Every target is considered to have this feature, and setting this feature does nothing.
 } halide_target_feature_t;
 
 /** This function is called internally by Halide in some situations to determine
@@ -766,6 +821,19 @@ extern halide_can_use_target_features_t halide_set_custom_can_use_target_feature
  *     }
  */
 extern int halide_default_can_use_target_features(uint64_t features);
+
+
+#ifndef HALIDE_ATTRIBUTE_DEPRECATED
+#ifdef HALIDE_ALLOW_DEPRECATED
+#define HALIDE_ATTRIBUTE_DEPRECATED(x)
+#else
+#ifdef _MSC_VER
+#define HALIDE_ATTRIBUTE_DEPRECATED(x) __declspec(deprecated(x))
+#else
+#define HALIDE_ATTRIBUTE_DEPRECATED(x) __attribute__((deprecated(x)))
+#endif
+#endif
+#endif
 
 
 #ifndef BUFFER_T_DEFINED
@@ -877,7 +945,7 @@ struct halide_filter_argument_t {
     const char *name;       // name of the argument; will never be null or empty.
     int32_t kind;           // actually halide_argument_kind_t
     int32_t dimensions;     // always zero for scalar arguments
-    halide_type_t type;
+    struct halide_type_t type;
     // These pointers should always be null for buffer arguments,
     // and *may* be null for scalar arguments. (A null value means
     // there is no def/min/max specified for this argument.)

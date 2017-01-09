@@ -10,7 +10,7 @@
 #include "metadata_tester.h"
 #include "metadata_tester_ucon.h"
 
-using namespace Halide;
+using namespace Halide::Runtime;
 
 const int kSize = 32;
 
@@ -113,8 +113,8 @@ void match_argument(const halide_filter_argument_t &e, const halide_filter_argum
 }
 
 template <typename Type>
-Image<Type> make_image() {
-    Image<Type> im(kSize, kSize, 3);
+Buffer<Type> make_image() {
+    Buffer<Type> im(kSize, kSize, 3);
     for (int x = 0; x < kSize; x++) {
         for (int y = 0; y < kSize; y++) {
             for (int c = 0; c < 3; c++) {
@@ -126,19 +126,18 @@ Image<Type> make_image() {
 }
 
 template <typename InputType, typename OutputType>
-void verify(const Image<InputType> &input, 
-            const Image<OutputType> &output0, 
-            const Image<OutputType> &output1, 
-            const Image<OutputType> &output_scalar, 
-            const Image<OutputType> &output_array0, 
-            const Image<OutputType> &output_array1) {
-    // Image doesn't allow for zero-dimensional buffers -- use 1-dimensional for now
-    if (output_scalar.dimensions() != 1 || output_scalar.width() != 1) {
+void verify(const Buffer<InputType> &input, 
+            const Buffer<OutputType> &output0, 
+            const Buffer<OutputType> &output1, 
+            const Buffer<OutputType> &output_scalar, 
+            const Buffer<OutputType> &output_array0, 
+            const Buffer<OutputType> &output_array1) {
+    if (output_scalar.dimensions() != 0) {
         fprintf(stderr, "output_scalar should be zero-dimensional\n");
         exit(-1);
     }
     if (output_scalar() != 1234.25f) {
-        fprintf(stderr, "output_scalar value is wrong (%f)\n", output_scalar(0));
+        fprintf(stderr, "output_scalar value is wrong (%f)\n", output_scalar());
         exit(-1);
     }
     for (int x = 0; x < kSize; x++) {
@@ -279,6 +278,33 @@ void check_metadata(const halide_filter_metadata_t &md, bool expect_ucon_at_0) {
         },
         {
           "input",
+          halide_argument_kind_input_buffer,
+          3,
+          halide_type_t(halide_type_uint, 8),
+          nullptr,
+          nullptr,
+          nullptr,
+        },
+        {
+          "typed_input_buffer",
+          halide_argument_kind_input_buffer,
+          3,
+          halide_type_t(halide_type_uint, 8),
+          nullptr,
+          nullptr,
+          nullptr,
+        },
+        {
+          "semityped_input_buffer",
+          halide_argument_kind_input_buffer,
+          3,
+          halide_type_t(halide_type_uint, 8),
+          nullptr,
+          nullptr,
+          nullptr,
+        },
+        {
+          "untyped_input_buffer",
           halide_argument_kind_input_buffer,
           3,
           halide_type_t(halide_type_uint, 8),
@@ -602,6 +628,24 @@ void check_metadata(const halide_filter_metadata_t &md, bool expect_ucon_at_0) {
           nullptr,
         },
         {
+          "typed_output_buffer",
+          halide_argument_kind_output_buffer,
+          3,
+          halide_type_t(halide_type_float, 32),
+          nullptr,
+          nullptr,
+          nullptr,
+        },
+        {
+          "untyped_output_buffer",
+          halide_argument_kind_output_buffer,
+          3,
+          halide_type_t(halide_type_float, 32),
+          nullptr,
+          nullptr,
+          nullptr,
+        },
+        {
           "output_scalar",
           halide_argument_kind_output_buffer,
           0,
@@ -687,17 +731,22 @@ int main(int argc, char **argv) {
 
     int result;
 
-    Image<uint8_t> input = make_image<uint8_t>();
+    Buffer<uint8_t> input = make_image<uint8_t>();
 
-    Image<float> output0(kSize, kSize, 3);
-    Image<float> output1(kSize, kSize, 3);
-    Image<float> output_scalar(1);  // Image doesn't allow for zero-dimensional buffers
-    Image<float> output_array[2] = {{kSize, kSize, 3}, {kSize, kSize, 3}};
-    Image<float> output_array2[2] = {{kSize, kSize, 3}, {kSize, kSize, 3}};
-    Image<float> output_array3[2] = {{1}, {1}};
+    Buffer<float> output0(kSize, kSize, 3);
+    Buffer<float> output1(kSize, kSize, 3);
+    Buffer<float> typed_output_buffer(kSize, kSize, 3);
+    Buffer<float> untyped_output_buffer(kSize, kSize, 3);
+    Buffer<float> output_scalar = Buffer<float>::make_scalar();
+    Buffer<float> output_array[2] = {{kSize, kSize, 3}, {kSize, kSize, 3}};
+    Buffer<float> output_array2[2] = {{kSize, kSize, 3}, {kSize, kSize, 3}};
+    Buffer<float> output_array3[2] = {{1}, {1}};
 
     result = metadata_tester(
         input,             // Input<Func>
+        input,             // Input<Buffer<uint8_t>>
+        input,             // Input<Buffer<>>(uint8)
+        input,             // Input<Buffer<>>
         false,             // Input<bool>
         0,                 // Input<i8>
         0,                 // Input<i16>
@@ -723,6 +772,8 @@ int main(int argc, char **argv) {
         0, 0,              // Input<int32_t[2]>
         nullptr, nullptr,  // Input<void*[]>
         output0, output1,  // Output<Tuple(Func, Func)>
+        typed_output_buffer,    // Output<Buffer<float>>
+        untyped_output_buffer,  // Output<Buffer<>>
         output_scalar,     // Output<float>
         output_array[0], output_array[1],   // Output<Func[]>
         output_array2[0], output_array2[1], // Output<Func[2]>
@@ -733,6 +784,9 @@ int main(int argc, char **argv) {
     result = metadata_tester_ucon(
         user_context, 
         input,             // Input<Func>
+        input,             // Input<Buffer<uint8_t>>
+        input,             // Input<Buffer<>>(uint8)
+        input,             // Input<Buffer<>>
         false,             // Input<bool>
         0,                 // Input<i8>
         0,                 // Input<i16>
@@ -758,6 +812,8 @@ int main(int argc, char **argv) {
         0, 0,              // Input<int32_t[2]>
         nullptr, nullptr,  // Input<void*[]>
         output0, output1,  // Output<Tuple(Func, Func)>
+        typed_output_buffer,    // Output<Buffer<float>>
+        untyped_output_buffer,  // Output<Buffer<>>
         output_scalar,     // Output<float>
         output_array[0], output_array[1],    // Output<Func[]>
         output_array2[0], output_array2[1], // Output<Func[2]>
