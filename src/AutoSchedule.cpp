@@ -212,7 +212,7 @@ void merge_and_queue_regions(deque<pair<FStage, DimBounds>> &f_queue,
         }
 
         // Skip adding the current region into to the queue if the function
-            // is not in prods.
+        // is not in prods.
         if (prods.find(reg.first) == prods.end()) {
             continue;
         }
@@ -266,7 +266,7 @@ DependenceAnalysis::regions_required(Function f, int stage_num,
             curr_scope.push(var_name, simple_bounds);
         }
 
-        // If the function has an extern definition there is no visibility into
+        // If the function has an extern definition, there is no visibility into
         // the expression defining the function. So the regions required will be
         // the entire domain of the inputs to the extern func. Use the estimates
         // on the inputs to the extern function if available.
@@ -277,7 +277,7 @@ DependenceAnalysis::regions_required(Function f, int stage_num,
         if (s.func.has_extern_definition()) {
             for (const ExternFuncArgument &arg : s.func.extern_arguments()) {
                 if (arg.is_func()) {
-                    // If the argument is an entire function the bounds of the
+                    // If the argument is an entire function, the bounds of the
                     // function required are unknown. Create an infinite region
                     // of the correct dimension, update the region map, and
                     // add it to the queue.
@@ -300,7 +300,7 @@ DependenceAnalysis::regions_required(Function f, int stage_num,
                     merge_and_queue_regions(f_queue, regions, arg_regions, prods,
                                             env, only_regions_computed, s.func.name());
                 } else if (arg.is_image_param() || arg.is_buffer()) {
-                    // If the argument is an image or a buffer the bounds
+                    // If the argument is an image or a buffer, the bounds
                     // required are unknown. Create an infinite region of the
                     // correct dimension and update the region map.
                     Buffer<> buf;
@@ -389,8 +389,8 @@ DependenceAnalysis::regions_required(Function f, int stage_num,
                 for (auto &b : curr_f.schedule().estimates()) {
                     size_t num_pure_args = curr_f.args().size();
                     if (i < num_pure_args && b.var == curr_f.args()[i]) {
-                        const IntImm * bmin = b.min.as<IntImm>();
-                        const IntImm * bextent = b.extent.as<IntImm>();
+                        const IntImm *bmin = b.min.as<IntImm>();
+                        const IntImm *bextent = b.extent.as<IntImm>();
                         upper = Expr(bmin->value + bextent->value - 1);
                     }
                 }
@@ -505,9 +505,12 @@ map<string, Box> get_pipeline_bounds(DependenceAnalysis &analysis,
         DimBounds pure_bounds;
         Box out_box;
         // Use the estimates on the output for determining the output bounds.
-        for (auto &arg : out.args()) {
+        // If there are duplicates, use the most recent estimate.
+        const auto &estimates = out.schedule().estimates();
+        for (const auto &arg : out.args()) {
             bool estimate_found = false;
-            for (auto &est : out.schedule().estimates()) {
+            for (int i = estimates.size() - 1; i >= 0; --i) {
+                const auto &est = estimates[i];
                 if (est.var == arg) {
                     Interval I = Interval(est.min, simplify(est.min + est.extent - 1));
                     pure_bounds[arg] = I;

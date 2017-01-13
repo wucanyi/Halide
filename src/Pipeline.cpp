@@ -168,15 +168,15 @@ vector<Func> Pipeline::outputs() const {
 
 string Pipeline::auto_schedule(const Target &target, const MachineParams &arch_params) {
     user_assert(target.arch == Target::X86 || target.arch == Target::ARM ||
-                target.arch == Target::POWERPC || target.arch == Target::MIPS) <<
-    "Automatic scheduling is currently supported only on these architectures.";
+                target.arch == Target::POWERPC || target.arch == Target::MIPS)
+        << "Automatic scheduling is currently supported only on these architectures.";
     return generate_schedules(contents->outputs, target, arch_params);
 }
 
 string Pipeline::auto_schedule(const Target &target) {
     user_assert(target.arch == Target::X86 || target.arch == Target::ARM ||
-                target.arch == Target::POWERPC || target.arch == Target::MIPS) <<
-    "Automatic scheduling is currently supported only on these architectures.";
+                target.arch == Target::POWERPC || target.arch == Target::MIPS)
+        << "Automatic scheduling is currently supported only on these architectures.";
     // Default machine parameters for generic CPU architecture.
     MachineParams arch_params;
     arch_params.parallelism = 16;
@@ -1052,9 +1052,9 @@ Pipeline::make_externs_jit_module(const Target &target,
                 // TODO: it's not clear whether arg.arg.type is correct for
                 // the arg.is_buffer() case (AFAIK, is_buffer()==true isn't possible
                 // in current mtrunk Halide, but may be in some side branches that
-                // have not yet landed, e.g. JavaScript). Forcing it to be 
+                // have not yet landed, e.g. JavaScript). Forcing it to be
                 // the correct type here, just in case.
-                arg_types.push_back(arg.arg.is_buffer() ? 
+                arg_types.push_back(arg.arg.is_buffer() ?
                                     type_of<struct buffer_t *>() :
                                     arg.arg.type);
             }

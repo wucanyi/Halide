@@ -232,14 +232,13 @@ DimBounds get_stage_bounds(Function f, int stage_num,
     // Assumes that the domain of the pure vars across all the update
     // definitions is the same. This may not be true and can result in
     // over estimation of the extent.
-    for (auto &b : pure_bounds) {
+    for (const auto &b : pure_bounds) {
         bounds[b.first] = b.second;
     }
 
-    for (auto &rvar : def.schedule().rvars()) {
+    for (const auto &rvar : def.schedule().rvars()) {
         Expr lower = SubstituteVarEstimates().mutate(rvar.min);
         Expr upper = SubstituteVarEstimates().mutate(rvar.min + rvar.extent - 1);
-        Interval simple_bounds = Interval(rvar.min, simplify(rvar.min + rvar.extent - 1));
         bounds[rvar.var] = Interval(simplify(lower),simplify(upper));
     }
 
