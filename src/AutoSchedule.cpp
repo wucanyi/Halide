@@ -26,7 +26,7 @@ void simplify_box(Box &b) {
  * region map. */
 void merge_regions(map<string, Box> &result, map<string, Box> &partial) {
     // Merge regions from partial with an existing region if any in the result.
-    for (auto &reg : partial) {
+    for (const auto &reg : partial) {
         if (result.find(reg.first) == result.end()) {
             result[reg.first] = reg.second;
         } else {
@@ -78,7 +78,7 @@ void set_schedule_defaults(map<string, Function> &env) {
  * on each of their dimensions. */
 bool check_estimates_on_outputs(const vector<Function> &outputs) {
     bool estimates_avail = true;
-    for (auto &out : outputs) {
+    for (const auto &out : outputs) {
         const vector<Bound> &estimates = out.schedule().estimates();
         if (estimates.size() != out.args().size()) {
             estimates_avail = false;
@@ -162,7 +162,7 @@ DependenceAnalysis::regions_required(Function f, const DimBounds &pure_bounds,
  * f_queue is the queue into which the regions specified by
  * prod_func and region will be added.*/
 void queue_func_regions(deque<pair<FStage, DimBounds>> &f_queue,
-                        const Function &prod_func, Box &region) {
+                        const Function &prod_func, const Box &region) {
     DimBounds prod_pure_bounds;
     const vector<string> &args = prod_func.args();
 
@@ -199,7 +199,7 @@ void merge_and_queue_regions(deque<pair<FStage, DimBounds>> &f_queue,
                              const set<string> &prods,
                              const map<string, Function> &env,
                              bool only_regions_computed, string curr_func_name) {
-    for (auto &reg : curr_regions) {
+    for (const auto &reg : curr_regions) {
         // Merge region with an existing region for the function in the
         // global map. Do not merge the parent function itself to the region
         // when querying only for the values computed.
@@ -320,7 +320,7 @@ DependenceAnalysis::regions_required(Function f, int stage_num,
 
         // Find the regions required for each value of the current function stage,
         // update the region map, and add them to the queue.
-        for (auto &val : def.values()) {
+        for (const auto &val : def.values()) {
             // Substitute the parameter estimates into the expression and get
             // the regions required for the expression.
             Expr subs_val = SubstituteVarEstimates().mutate(val);
@@ -376,7 +376,7 @@ DependenceAnalysis::regions_required(Function f, int stage_num,
 
             if (!lower.as<IntImm>() && in_env) {
                 const Function &curr_f = env.at(f_reg.first);
-                for (auto &b : curr_f.schedule().estimates()) {
+                for (const auto &b : curr_f.schedule().estimates()) {
                     size_t num_pure_args = curr_f.args().size();
                     if (i < num_pure_args && b.var == curr_f.args()[i]) {
                         lower = Expr(b.min.as<IntImm>()->value);
@@ -386,7 +386,7 @@ DependenceAnalysis::regions_required(Function f, int stage_num,
 
             if (!upper.as<IntImm>() && in_env) {
                 const Function &curr_f = env.at(f_reg.first);
-                for (auto &b : curr_f.schedule().estimates()) {
+                for (const auto &b : curr_f.schedule().estimates()) {
                     size_t num_pure_args = curr_f.args().size();
                     if (i < num_pure_args && b.var == curr_f.args()[i]) {
                         const IntImm *bmin = b.min.as<IntImm>();
@@ -421,7 +421,7 @@ DependenceAnalysis::redundant_regions(Function f, int stage_num, string var,
     // of var.
     DimBounds shifted_bounds;
 
-    for (auto &b : bounds) {
+    for (const auto &b : bounds) {
         if (b.first == var) {
             Expr len = b.second.max - b.second.min + 1;
             Interval bound = Interval(b.second.min + len,
@@ -441,7 +441,7 @@ DependenceAnalysis::redundant_regions(Function f, int stage_num, string var,
     // Compute the overlaps between the regions_shifted and the original
     // regions required.
     map<string, Box> overlaps;
-    for (auto &reg : regions) {
+    for (const auto &reg : regions) {
         if (regions_shifted.find(reg.first) == regions.end()) {
             // It will be interesting to log cases where this actually happens
             // i.e., the shifted regions do not contain a function that was
@@ -501,7 +501,7 @@ map<string, Box> get_pipeline_bounds(DependenceAnalysis &analysis,
 
     // Find the regions required for each of the outputs and merge them
     // to compute the full pipeline_bounds.
-    for (auto &out : outputs) {
+    for (const auto &out : outputs) {
         DimBounds pure_bounds;
         Box out_box;
         // Use the estimates on the output for determining the output bounds.
@@ -628,19 +628,19 @@ struct Partitioner {
 
             stream << "Output FStage:" << g.output << '\n';
             stream << "Members:" << '[';
-            for (auto &m : g.members) {
+            for (const auto &m : g.members) {
                 stream << m << ",";
             }
             stream << "]" << '\n';
 
             stream << "Inlined:" << '[';
-            for (auto &in : g.inlined) {
+            for (const auto &in : g.inlined) {
                 stream << in << ",";
             }
             stream << "]" << '\n';
 
             stream << "Tile sizes:" << "[";
-            for (auto &s : g.tile_sizes) {
+            for (const auto &s : g.tile_sizes) {
                 stream << "(" << s.first << "," <<  s.second << ")";
             }
             stream << "]" << '\n';
@@ -785,7 +785,7 @@ void Partitioner::disp_grouping(int dlevel = debug_level) {
     debug(dlevel) << "\n=========" << '\n';
     debug(dlevel) << "Grouping:" << '\n';
     debug(dlevel) << "=========" << '\n';
-    for (auto &g : groups) {
+    for (const auto &g : groups) {
         debug(dlevel) << g.second << '\n';
     }
     debug(dlevel) << "=========" << '\n';
@@ -795,9 +795,9 @@ void Partitioner::disp_pipeline_graph(int dlevel = debug_level) {
     debug(dlevel) << "\n================" << '\n';
     debug(dlevel) << "Pipeline graph:" << '\n';
     debug(dlevel) << "================" << '\n';
-    for (auto &f : children) {
+    for (const auto &f : children) {
         debug(dlevel) << f.first << ": [";
-        for (auto &c : f.second) {
+        for (const auto &c : f.second) {
             debug(dlevel) << c << ",";
         }
         debug(dlevel) << "]" << '\n';
@@ -857,7 +857,7 @@ Partitioner::Partitioner(map<string, Box> &_pipeline_bounds,
     dep_analysis(_dep_analysis), costs(_costs), outputs(_outputs) {
     // Place each stage of a function in its own group. Each stage
     // is a node in the pipeline graph.
-    for (auto &f : dep_analysis.env) {
+    for (const auto &f : dep_analysis.env) {
         int num_stages = f.second.updates().size() + 1;
         for (int s = 0; s < num_stages; s++) {
             FStage stg(f.second, s);
@@ -867,7 +867,7 @@ Partitioner::Partitioner(map<string, Box> &_pipeline_bounds,
     }
 
     // Find consumers of each function and use it to populate the children map.
-    for (auto &f : dep_analysis.env) {
+    for (const auto &f : dep_analysis.env) {
         int num_stages = f.second.updates().size() + 1;
         for (int s = 0; s < num_stages; s++) {
 
@@ -922,11 +922,11 @@ void Partitioner::merge_groups(const FusionChoice &choice, const GroupConfig &ev
                                    cand_funcs.begin(), cand_funcs.end());
 
         if (level == Partitioner::INLINE) {
-            for (auto &stg : cand_funcs) {
+            for (const auto &stg : cand_funcs) {
                 child_group.inlined.insert(stg.func.name());
             }
         } else {
-            for (auto &in : cand_group.inlined) {
+            for (const auto &in : cand_group.inlined) {
                 child_group.inlined.insert(in);
             }
         }
@@ -978,7 +978,7 @@ map<string, int64_t> Partitioner::evaluate_reuse(const FStage &stg,
     for (int d = 0; d < (int)dims.size() - 1; d++) {
         int64_t total_reuse = 0;
         disp_regions(reuse_regions[d]);
-        for (auto &reg : reuse_regions[d]) {
+        for (const auto &reg : reuse_regions[d]) {
             int64_t size = box_size(reg.second);
             if (size != unknown) {
                 total_reuse += size;
@@ -1001,7 +1001,7 @@ Partitioner::choose_candidate_fuse(const vector<pair<string, string>> &cands,
                                    Partitioner::Level level) {
     vector<pair<FusionChoice, GroupConfig>> best_choices;
     int64_t best_benefit = 0;
-    for (auto &p : cands) {
+    for (const auto &p : cands) {
         // Compute the aggregate benefit for inlining into all the children.
         vector<pair<FusionChoice, GroupConfig>> choices;
 
@@ -1031,7 +1031,7 @@ Partitioner::choose_candidate_fuse(const vector<pair<string, string>> &cands,
         bool no_redundant_work = false;
         int64_t overall_benefit = estimate_benefit(choices, no_redundant_work, true);
 
-        for (auto &choice : choices) {
+        for (const auto &choice : choices) {
             debug(debug_level) << "Cand choice:" << choice.first;
         }
         debug(debug_level) << "Cand benefit:" << overall_benefit << '\n';
@@ -1043,7 +1043,7 @@ Partitioner::choose_candidate_fuse(const vector<pair<string, string>> &cands,
         }
     }
 
-    for (auto &choice : best_choices) {
+    for (const auto &choice : best_choices) {
         debug(debug_level) << "\nBest choice:" << choice.first;
     }
     if (best_choices.size() > 0) {
@@ -1084,7 +1084,7 @@ Partitioner::generate_tile_configs(const FStage &stg) {
 
     // Skewed tile configurations
     for (size_t i = 0; i < tile_vars.size(); i++) {
-        for (auto &dim_size : size_variants) {
+        for (const auto &dim_size : size_variants) {
             map<string, int> tiling;
             for (size_t j = 0; j < tile_vars.size(); j++) {
                 if (j == i) {
@@ -1102,7 +1102,7 @@ Partitioner::generate_tile_configs(const FStage &stg) {
     }
 
     // Almost square tile configurations
-    for (auto &dim_size : size_variants) {
+    for (const auto &dim_size : size_variants) {
         map<string, int> tiling;
         for (size_t j = 0; j < tile_vars.size(); j++) {
             tiling[tile_vars[j]] = j == 0 ?
@@ -1152,7 +1152,7 @@ Partitioner::find_best_tile_config(const Group &g) {
     vector<map<string, int>> configs = generate_tile_configs(g.output);
 
     Group best_group = g;
-    for (auto &config : configs) {
+    for (const auto &config : configs) {
         Group new_group = g;
         new_group.tile_sizes = config;
 
@@ -1238,7 +1238,7 @@ void Partitioner::group(Partitioner::Level level) {
         debug(debug_level) << "\n============================" << '\n';
         debug(debug_level) << "Current grouping candidates:" << '\n';
         debug(debug_level) << "============================" << '\n';
-        for (auto &p : cand) {
+        for (const auto &p : cand) {
             debug(debug_level) << "[" << p.first << "," << p.second << "]" << '\n';
         }
 
@@ -1264,19 +1264,19 @@ void Partitioner::group(Partitioner::Level level) {
 
         // Invalidate entries of the fusion cache
         set<FusionChoice> invalid_keys;
-        for (auto &c : prod_group_children) {
-            for (auto &entry : fusion_cache) {
+        for (const auto &c : prod_group_children) {
+            for (const auto &entry : fusion_cache) {
                 if (entry.first.prod == c.func.name() || entry.first.cons == c) {
                     invalid_keys.insert(entry.first);
                 }
             }
         }
 
-        for (auto &key : invalid_keys) {
+        for (const auto &key : invalid_keys) {
             fusion_cache.erase(key);
         }
 
-        for (auto &fuse : best) {
+        for (const auto &fuse : best) {
             internal_assert(fuse.first.prod == prod);
             merge_groups(fuse.first, fuse.second, level);
         }
@@ -1366,12 +1366,12 @@ Partitioner::analyze_group(const Group &g, bool show_analysis) {
     set<string> group_inputs;
     set<string> group_mem;
 
-    for (auto &stg : g.members) {
+    for (const auto &stg : g.members) {
         group_mem.insert(stg.func.name());
         set<string> parents = get_parents(stg.func, stg.stage_num);
-        for (auto &c : parents) {
+        for (const auto &c : parents) {
             bool is_member = false;
-            for (auto &m : g.members) {
+            for (const auto &m : g.members) {
                 if (m.func.name() == c) {
                     is_member = true;
                     break;
@@ -1429,7 +1429,7 @@ Partitioner::analyze_group(const Group &g, bool show_analysis) {
 
     // Separating into regions that belong to the group and regions that are
     // input to the group
-    for (auto &reg : compute_reg) {
+    for (const auto &reg : compute_reg) {
         if (group_mem.find(reg.first) != group_mem.end() &&
             reg.first != g.output.func.name()) {
             group_reg[reg.first] = reg.second;
@@ -1464,7 +1464,7 @@ Partitioner::analyze_group(const Group &g, bool show_analysis) {
                                             g.output.stage_num,
                                             tile_bounds, g.inlined);
     bool bounds_defined = true;
-    for (auto &reg : alloc_reg) {
+    for (const auto &reg : alloc_reg) {
         if (box_size(reg.second) == unknown) {
             bounds_defined = false;
         }
@@ -1532,7 +1532,7 @@ Partitioner::analyze_group(const Group &g, bool show_analysis) {
 
     // Linear dropoff
     float load_slope = (float)arch_params.balance / arch_params.last_level_cache_size;
-    for (auto &f_load : group_load_costs) {
+    for (const auto &f_load : group_load_costs) {
         int64_t footprint = 0;
         if (group_mem.find(f_load.first) != group_mem.end() &&
             f_load.first != g.output.func.name()) {
@@ -1584,7 +1584,7 @@ Partitioner::analyze_group(const Group &g, bool show_analysis) {
 
     if (show_analysis) {
         debug(debug_level) << "\nDetailed loads:\n";
-        for (auto &f_load : group_load_costs) {
+        for (const auto &f_load : group_load_costs) {
             debug(debug_level) << "(" << f_load.first << "," << f_load.second << ")";
         }
         debug(debug_level) << '\n';
@@ -1605,19 +1605,19 @@ Partitioner::analyze_group(const Group &g, bool show_analysis) {
 Partitioner::Group Partitioner::fuse_groups(const Group &prod_group,
                                             const Group &cons_group) {
     vector<FStage> fused_members;
-    for (auto &s : prod_group.members) {
+    for (const auto &s : prod_group.members) {
         fused_members.push_back(s);
     }
-    for (auto &s : cons_group.members) {
+    for (const auto &s : cons_group.members) {
         fused_members.push_back(s);
     }
 
     Group fused_group(cons_group.output, fused_members);
 
-    for (auto &f : prod_group.inlined) {
+    for (const auto &f : prod_group.inlined) {
         fused_group.inlined.insert(f);
     }
-    for (auto &f : cons_group.inlined) {
+    for (const auto &f : cons_group.inlined) {
         fused_group.inlined.insert(f);
     }
 
@@ -1640,7 +1640,7 @@ Partitioner::evaluate_choice(const FusionChoice &choice,
 
     Group cons = groups.at(choice.cons);
     Group fused = cons;
-    for (auto &prod_g : prod_groups) {
+    for (const auto &prod_g : prod_groups) {
         fused = fuse_groups(prod_g, fused);
     }
 
@@ -1661,7 +1661,7 @@ Partitioner::evaluate_choice(const FusionChoice &choice,
 
         fused.tile_sizes = tile_sizes;
 
-        for (auto &prod_g : prod_groups) {
+        for (const auto &prod_g : prod_groups) {
             for (const FStage &s : prod_g.members) {
                 fused.inlined.insert(s.func.name());
             }
@@ -1722,7 +1722,7 @@ int64_t Partitioner::estimate_benefit(
 
     set<FStage> no_fuse_groups;
 
-    for (auto &choice : choices) {
+    for (const auto &choice : choices) {
         Function prod_f = dep_analysis.env.at(choice.first.prod);
         int num_prod_stages = prod_f.updates().size() + 1;
         for (int s = 0; s < num_prod_stages; s++) {
@@ -1750,7 +1750,7 @@ int64_t Partitioner::estimate_benefit(
     no_fuse_analysis.cost.memory = 0;
     no_fuse_analysis.parallelism = std::numeric_limits<int64_t>::max();
 
-    for (auto &g : no_fuse_groups) {
+    for (const auto &g : no_fuse_groups) {
         internal_assert(group_costs.find(g) != group_costs.end());
         GroupAnalysis analysisg = group_costs.at(g);
         if (analysisg.cost.arith != unknown) {
@@ -1771,7 +1771,7 @@ int64_t Partitioner::estimate_benefit(
 
 map<string, int64_t> Partitioner::bounds_to_estimates(const DimBounds &bounds) {
     map<string, int64_t> estimates;
-    for (auto &bound : bounds) {
+    for (const auto &bound : bounds) {
         int64_t estimate = get_extent(bound.second);
         estimates[bound.first] = estimate;
     }
@@ -1885,7 +1885,7 @@ void vectorize_stage(Stage f_handle, Definition def, Function func,
     // Set the vector length as the maximum of the natural vector size of all
     // the values produced by the function.
     int vec_len = 0;
-    for (auto &type : func.output_types()) {
+    for (const auto &type : func.output_types()) {
         vec_len = std::max(vec_len, t.natural_vector_size(type));
     }
 
@@ -2001,14 +2001,14 @@ void reorder_dims(Stage f_handle, Definition def,
     // TODO: Remove debug code.
     /*
     debug(0) << "Var order for stage:" << f_handle.name() << '\n';
-    for (auto &o : order) {
+    for (const auto &o : order) {
         debug(0) << o.first << ',';
     }
     debug(0) << '\n';
     */
 
     vector<VarOrRVar> ordering;
-    for (auto &o : order) {
+    for (const auto &o : order) {
         VarOrRVar o_var(o.first, o.second);
         ordering.push_back(o_var);
     }
@@ -2073,7 +2073,7 @@ string Partitioner::generate_group_cpu_schedule(
     set<string> rvars;
     for (int d = 0; d < (int)dims.size() - 1; d++) {
         bool is_pure_var = false;
-        for (auto &arg : g_out.args()) {
+        for (const auto &arg : g_out.args()) {
             if (arg == get_base_name(dims[d].var)) {
                 is_pure_var = true;
                 break;
@@ -2094,7 +2094,7 @@ string Partitioner::generate_group_cpu_schedule(
         dim_vars.push_back(get_base_name(dims[d].var));
     }
 
-    for (auto &var : dim_vars) {
+    for (const auto &var : dim_vars) {
         bool is_rvar = (rvars.find(var) != rvars.end());
         VarOrRVar v(var, is_rvar);
 
@@ -2127,10 +2127,10 @@ string Partitioner::generate_group_cpu_schedule(
     if (outer_dims.size() > 0) {
 
         vector<VarOrRVar> ordering;
-        for (auto &v : inner_dims) {
+        for (const auto &v : inner_dims) {
             ordering.push_back(v);
         }
-        for (auto &v : outer_dims) {
+        for (const auto &v : outer_dims) {
             ordering.push_back(v);
         }
 
@@ -2190,8 +2190,8 @@ string Partitioner::generate_group_cpu_schedule(
     }
 
     if (def_par < arch_params.parallelism) {
-        user_warning << "Warning: insuffcient parallelism for " <<
-                         f_handle.name() << '\n';
+        user_warning << "Warning: insuffcient parallelism for "
+                     << f_handle.name() << '\n';
     }
 
     // Find the level at which group members will be computed.
@@ -2221,7 +2221,7 @@ string Partitioner::generate_group_cpu_schedule(
         const vector<Dim> &mem_dims = mem_def.schedule().dims();
         for (int d = 0; d < (int)mem_dims.size() - 1; d++) {
             bool is_pure_var = false;
-            for (auto &arg : mem.func.args()) {
+            for (const auto &arg : mem.func.args()) {
                 if (arg == get_base_name(mem_dims[d].var)) {
                     is_pure_var = true;
                     break;
@@ -2303,7 +2303,7 @@ string Partitioner::generate_cpu_schedule(const Target &t) {
     }
 
     // Realize schedule for each group in the pipeline.
-    for (auto &g : groups) {
+    for (const auto &g : groups) {
         sched += generate_group_cpu_schedule(g.second, t, loop_bounds[g.first],
                                              storage_bounds[g.first], inlines);
     }
@@ -2366,7 +2366,7 @@ int64_t Partitioner::find_max_access_stride(const set<string> &vars,
     // number of bytes required to store a single value of func_acc.
     if (dep_analysis.env.find(func_acc) != dep_analysis.env.end()) {
         Function f = dep_analysis.env.at(func_acc);
-        for (auto &e : f.values()) {
+        for (const auto &e : f.values()) {
             bytes_per_ele += e.type().bytes();
         }
         num_storage_dims = f.schedule().storage_dims().size();
@@ -2497,8 +2497,8 @@ string generate_schedules(const vector<Function> &outputs, const Target &target,
     bool estimates_avail = check_estimates_on_outputs(outputs);
 
     if (!estimates_avail) {
-        user_warning << "Please provide estimates for each dimension " <<
-                        "of the pipeline output functions.\n";
+        user_warning << "Please provide estimates for each dimension "
+                     << "of the pipeline output functions.\n";
 
         // Computing all the pipeline stages at root and storing them at root.
         set_schedule_defaults(env);
@@ -2523,7 +2523,7 @@ string generate_schedules(const vector<Function> &outputs, const Target &target,
 
     // Compute and display reuse
     /* TODO: Use the reuse estimates to reorder loops
-    for (auto &f : env) {
+    for (const auto &f : env) {
         FindAllCalls find;
         f.second.accept(&find);
         int num_stages = f.second.updates().size() + 1;
@@ -2532,7 +2532,7 @@ string generate_schedules(const vector<Function> &outputs, const Target &target,
             map<string, int64_t> reuse =
                     part.evaluate_reuse(curr_s, find.funcs_called);
             debug(0) << curr_s << '\n';
-            for (auto &dir : reuse) {
+            for (const auto &dir : reuse) {
                 debug(0) << dir.first << " " << dir.second << ',';
             }
 

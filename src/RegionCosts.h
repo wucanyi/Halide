@@ -130,24 +130,24 @@ struct RegionCosts {
     /** Returns the cost of producing a region (specified by bounds) of a
      * function stage (specified by func and stage). inlines specifies names of
      * all the inlined functions. */
-    Cost stage_region_cost(string func, int stage, DimBounds &bounds,
+    Cost stage_region_cost(string func, int stage, const DimBounds &bounds,
                            const set<string> &inlines = set<string>());
 
     /** Returns the cost of producing a region of a function stage (specified
      * by func and stage). inlines specifies names of all the inlined
      * functions. */
-    Cost stage_region_cost(string func, int stage, Box &region,
+    Cost stage_region_cost(string func, int stage, const Box &region,
                            const set<string> &inlines = set<string>());
 
     /** Returns the cost of producing a region of function func. Adds up the
      * cost of all the stages of func required to produce the region. inlines
      * specifies names of all the inlined functions. */
-    Cost region_cost(string func, Box &region,
+    Cost region_cost(string func, const Box &region,
                      const set<string> &inlines = set<string>());
 
     /** Same as region cost but computes the total cost of a many function
      * regions. */
-    Cost region_cost(map<string, Box> &regions,
+    Cost region_cost(const map<string, Box> &regions,
                      const set<string> &inlines = set<string>());
 
     /** Computes the cost of producing a single value of each stage of the f.
