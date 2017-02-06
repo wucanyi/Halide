@@ -1,5 +1,6 @@
 #include "Halide.h"
 #include "benchmark.h"
+
 using namespace Halide;
 
 Var x("x"), y("y"), c("c");
@@ -108,7 +109,6 @@ double run_test(bool auto_schedule) {
 }
 
 int main(int argc, char **argv) {
-
     double manual_time = run_test(false);
     double auto_time = run_test(true);
 

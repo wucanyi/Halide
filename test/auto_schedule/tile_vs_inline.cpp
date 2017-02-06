@@ -1,8 +1,8 @@
 #include "Halide.h"
+
 using namespace Halide;
 
 int main(int argc, char **argv) {
-
     int H = 1024;
     int W = 1024;
 

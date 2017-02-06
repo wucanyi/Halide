@@ -1,8 +1,8 @@
 #include "Halide.h"
+
 using namespace Halide;
 
 int main(int argc, char **argv) {
-
     int H = 800;
     int W = 800;
     Buffer<uint16_t> input(H, W);

@@ -9,7 +9,6 @@
 
 // An extern stage that translates.
 extern "C" DLLEXPORT int translate(buffer_t *in, int dx, int dy, buffer_t *out) {
-
     if (in->host == nullptr) {
         in->min[0] = out->min[0] + dx;
         in->min[1] = out->min[1] + dy;
@@ -35,7 +34,6 @@ extern "C" DLLEXPORT int translate(buffer_t *in, int dx, int dy, buffer_t *out) 
 using namespace Halide;
 
 int main(int argc, char **argv) {
-
     ImageParam input(UInt(8), 2);
     Var x("x"), y("y");
     Func f0("f0");

@@ -1,5 +1,6 @@
 #include "Halide.h"
 #include "benchmark.h"
+
 using namespace Halide;
 
 double run_test_1(bool auto_schedule) {
@@ -186,7 +187,6 @@ double run_test_2(bool auto_schedule) {
 
 
 int main(int argc, char **argv) {
-
     {
         std::cout << "Test 1:" << std::endl;
         double manual_time = run_test_1(false);

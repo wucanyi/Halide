@@ -16,17 +16,16 @@ int main(int argc, char **argv) {
     // Provide estimates for pipeline output
     g.estimate(x, 0, 50);
 
+    // Partially specify some schedules
+    g.parallel(x);
+
     // Auto schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(g);
 
+    // This should throw an error since auto-scheduler does not currently
+    // support partial schedules
     p.auto_schedule(target);
-
-    // Inspect the schedule
-    g.print_loop_nest();
-
-    // Run the schedule
-    Buffer<int> out = p.realize(10);
 
     printf("Success!\n");
     return 0;

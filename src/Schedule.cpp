@@ -240,7 +240,7 @@ const std::vector<Prefetch> &Schedule::prefetches() const {
 const std::vector<Bound> &Schedule::estimates() const {
     return contents->estimates;
 }
- 
+
 std::vector<ReductionVariable> &Schedule::rvars() {
     return contents->rvars;
 }

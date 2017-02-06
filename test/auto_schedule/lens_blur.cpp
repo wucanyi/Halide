@@ -11,25 +11,20 @@ Var x, y, z, c;
 // Downsample with a 1 3 3 1 filter
 Func downsample(Func f) {
     Func downx, downy;
-
     downx(x, y, _) = (f(2*x-1, y, _) + 3.0f * (f(2*x, y, _) + f(2*x+1, y, _)) + f(2*x+2, y, _)) / 8.0f;
     downy(x, y, _) = (downx(x, 2*y-1, _) + 3.0f * (downx(x, 2*y, _) + downx(x, 2*y+1, _)) + downx(x, 2*y+2, _)) / 8.0f;
-
     return downy;
 }
 
 // Upsample using bilinear interpolation
 Func upsample(Func f) {
     Func upx, upy;
-
     upx(x, y, _) = 0.25f * f((x/2) - 1 + 2*(x % 2), y, _) + 0.75f * f(x/2, y, _);
     upy(x, y, _) = 0.25f * upx(x, (y/2) - 1 + 2*(y % 2), _) + 0.75f * upx(x, y/2, _);
-
     return upy;
 }
 
 double run_test(bool auto_schedule) {
-
     int H = 1920;
     int W = 1024;
     Buffer<uint8_t> left_im(H, W, 3);
@@ -307,7 +302,6 @@ double run_test(bool auto_schedule) {
 }
 
 int main(int argc, char **argv) {
-
     double manual_time = run_test(false);
     double auto_time = run_test(true);
 

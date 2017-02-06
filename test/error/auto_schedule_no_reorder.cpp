@@ -4,29 +4,29 @@
 using namespace Halide;
 
 int main(int argc, char **argv) {
-    Func fib, g;
-    Var x;
+    Func f, g;
+    Var x, y;
     RDom r(2, 18);
 
-    fib(x) = 1;
-    fib(r) = fib(r-2) + fib(r-1);
+    f(x, y) = 1;
+    f(r, y) = f(r-2, y) + f(r-1, y);
 
-    g(x) = fib(x+10);
+    g(x, y) = f(x+10, y) + 2;
 
     // Provide estimates for pipeline output
     g.estimate(x, 0, 50);
+    g.estimate(y, 0, 50);
+
+    // Partially specify some schedules
+    g.reorder(y, x);
 
     // Auto schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(g);
 
+    // This should throw an error since auto-scheduler does not currently
+    // support partial schedules
     p.auto_schedule(target);
-
-    // Inspect the schedule
-    g.print_loop_nest();
-
-    // Run the schedule
-    Buffer<int> out = p.realize(10);
 
     printf("Success!\n");
     return 0;

@@ -4,7 +4,6 @@
 using namespace Halide;
 
 double run_test(bool auto_schedule) {
-
     int H = 1920;
     int W = 1024;
     Buffer<uint8_t> in(H, W, 3);
@@ -119,7 +118,6 @@ double run_test(bool auto_schedule) {
 }
 
 int main(int argc, char **argv) {
-
     double manual_time = run_test(false);
     double auto_time = run_test(true);
 

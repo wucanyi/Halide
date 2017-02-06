@@ -250,6 +250,8 @@ SOURCE_FILES = \
   AllocationBoundsInference.cpp \
   ApplySplit.cpp \
   Associativity.cpp \
+  AutoSchedule.cpp \
+  AutoScheduleUtils.cpp \
   BoundaryConditions.cpp \
   Bounds.cpp \
   BoundsInference.cpp \
@@ -335,6 +337,7 @@ SOURCE_FILES = \
   RDom.cpp \
   RealizationOrder.cpp \
   Reduction.cpp \
+  RegionCosts.cpp \
   RemoveDeadAllocations.cpp \
   RemoveTrivialForLoops.cpp \
   RemoveUndef.cpp \
@@ -364,8 +367,6 @@ SOURCE_FILES = \
   VaryingAttributes.cpp \
   VectorizeLoops.cpp \
   WrapCalls.cpp \
-  AutoSchedule.cpp \
-  RegionCosts.cpp
 
 # The externally-visible header files that go into making Halide.h. Don't include anything here that includes llvm headers.
 HEADER_FILES = \
@@ -376,6 +377,8 @@ HEADER_FILES = \
   ApplySplit.h \
   Argument.h \
   Associativity.h \
+  AutoSchedule.h \
+  AutoScheduleUtils.h \
   BoundaryConditions.h \
   Bounds.h \
   BoundsInference.h \
@@ -469,6 +472,7 @@ HEADER_FILES = \
   RealizationOrder.h \
   RDom.h \
   Reduction.h \
+  RegionCosts.h \
   RemoveDeadAllocations.h \
   RemoveTrivialForLoops.h \
   RemoveUndef.h \
@@ -499,8 +503,6 @@ HEADER_FILES = \
   VaryingAttributes.h \
   VectorizeLoops.h \
   WrapCalls.h \
-  AutoSchedule.h \
-  RegionCosts.h
 
 OBJECTS = $(SOURCE_FILES:%.cpp=$(BUILD_DIR)/%.o)
 HEADERS = $(HEADER_FILES:%.h=$(SRC_DIR)/%.h)

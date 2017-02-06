@@ -287,7 +287,7 @@ public:
     // @}
 
     /** You may explicitly specify an estimate of some of the function
-     * dimensions See \ref Func::estimate */
+     * dimensions. See \ref Func::estimate */
     // @{
     const std::vector<Bound> &estimates() const;
     std::vector<Bound> &estimates();

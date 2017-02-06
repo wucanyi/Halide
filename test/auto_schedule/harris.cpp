@@ -1,6 +1,7 @@
 #include "Halide.h"
 #include "benchmark.h"
 #include <stdio.h>
+
 using namespace Halide;
 
 Expr sum3x3(Func f, Var x, Var y) {
@@ -109,7 +110,6 @@ double run_test(bool auto_schedule) {
 }
 
 int main(int argc, char **argv) {
-
     double manual_time = run_test(false);
     double auto_time = run_test(true);
 

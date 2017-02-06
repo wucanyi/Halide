@@ -228,6 +228,7 @@ set(HEADER_FILES
   Argument.h
   Associativity.h
   AutoSchedule.h
+  AutoScheduleUtils.h
   BoundaryConditions.h
   Bounds.h
   BoundsInference.h
@@ -381,6 +382,7 @@ add_library(Halide ${HALIDE_LIBRARY_TYPE}
   ApplySplit.cpp
   Associativity.cpp
   AutoSchedule.cpp
+  AutoScheduleUtils.cpp
   BoundaryConditions.cpp
   Bounds.cpp
   BoundsInference.cpp

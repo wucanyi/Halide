@@ -4,7 +4,6 @@
 using namespace Halide;
 
 int main(int argc, char **argv) {
-
     Var x("x"), y("y"), xi("xi"), yi("yi");
     Buffer<float> input = lambda(x, y, sin(x) + cos(y) + 1.0f).realize(2200, 2200);
 
