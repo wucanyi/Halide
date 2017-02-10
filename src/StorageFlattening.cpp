@@ -143,18 +143,20 @@ private:
         }
 
         // Create a buffer_t object for this allocation.
-        vector<Expr> args(dims*3 + 2);
-        Expr first_elem = Load::make(op->types[0], op->name, 0, Buffer<>(), Parameter());
-        args[0] = Call::make(Handle(), Call::address_of, {first_elem}, Call::PureIntrinsic);
-        args[1] = make_zero(op->types[0]);
-        for (int i = 0; i < dims; i++) {
-            args[3*i+2] = min_var[i];
-            args[3*i+3] = extent_var[i];
-            args[3*i+4] = stride_var[i];
+        if (dims <= 4) {
+            BufferBuilder builder;
+            Expr first_elem = Load::make(op->types[0], op->name, 0, Buffer<>(), Parameter(),
+                                         const_true(op->types[0].lanes()));
+            builder.host = Call::make(Handle(), Call::address_of, {first_elem}, Call::PureIntrinsic);
+            builder.type = op->types[0];
+            builder.dimensions = dims;
+            for (int i = 0; i < dims; i++) {
+                builder.mins.push_back(min_var[i]);
+                builder.extents.push_back(extent_var[i]);
+                builder.strides.push_back(stride_var[i]);
+            }
+            stmt = LetStmt::make(op->name + ".buffer", builder.build(), stmt);
         }
-        Expr buf = Call::make(type_of<struct buffer_t *>(), Call::create_buffer_t,
-                              args, Call::Intrinsic);
-        stmt = LetStmt::make(op->name + ".buffer", buf, stmt);
 
         // Make the allocation node
         stmt = Allocate::make(op->name, op->types[0], extents, condition, stmt);
@@ -185,7 +187,7 @@ private:
 
         Expr idx = mutate(flatten_args(op->name, op->args));
         Expr value = mutate(op->values[0]);
-        stmt = Store::make(op->name, value, idx, Parameter());
+        stmt = Store::make(op->name, value, idx, Parameter(), const_true(value.type().lanes()));
     }
 
     void visit(const Call *op) {
@@ -193,7 +195,8 @@ private:
             op->call_type == Call::Image) {
             internal_assert(op->value_index == 0);
             Expr idx = mutate(flatten_args(op->name, op->args));
-            expr = Load::make(op->type, op->name, idx, op->image, op->param);
+            expr = Load::make(op->type, op->name, idx, op->image, op->param,
+                              const_true(op->type.lanes()));
         } else {
             IRMutator::visit(op);
         }
@@ -238,7 +241,8 @@ class PromoteToMemoryType : public IRMutator {
     void visit(const Load *op) {
         Type t = upgrade(op->type);
         if (t != op->type) {
-            expr = Cast::make(op->type, Load::make(t, op->name, mutate(op->index), op->image, op->param));
+            expr = Cast::make(op->type, Load::make(t, op->name, mutate(op->index),
+                                                   op->image, op->param, mutate(op->predicate)));
         } else {
             IRMutator::visit(op);
         }
@@ -247,7 +251,8 @@ class PromoteToMemoryType : public IRMutator {
     void visit(const Store *op) {
         Type t = upgrade(op->value.type());
         if (t != op->value.type()) {
-            stmt = Store::make(op->name, Cast::make(t, mutate(op->value)), mutate(op->index), op->param);
+            stmt = Store::make(op->name, Cast::make(t, mutate(op->value)), mutate(op->index),
+                                                    op->param, mutate(op->predicate));
         } else {
             IRMutator::visit(op);
         }
@@ -291,7 +296,7 @@ class ConnectOutputBuffers : public IRMutator {
         }
 
         if (output_buf.defined()) {
-            stmt = Store::make(op->name, op->value, op->index, output_buf);
+            stmt = Store::make(op->name, op->value, op->index, output_buf, const_true());
         } else {
             stmt = op;
         }

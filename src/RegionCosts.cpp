@@ -111,13 +111,11 @@ class ExprCost : public IRVisitor {
                 user_warning << "Unknown extern call " << call->name << '\n';
             }
         } else if (call->call_type == Call::Intrinsic || call->call_type == Call::PureIntrinsic) {
-            if (call->is_intrinsic(Call::shuffle_vector) || call->is_intrinsic(Call::interleave_vectors) ||
-                    call->is_intrinsic(Call::concat_vectors) || call->is_intrinsic(Call::reinterpret) ||
-                    call->is_intrinsic(Call::bitwise_and) || call->is_intrinsic(Call::bitwise_not) ||
-                    call->is_intrinsic(Call::bitwise_xor) || call->is_intrinsic(Call::bitwise_or) ||
-                    call->is_intrinsic(Call::shift_left) || call->is_intrinsic(Call::shift_right) ||
-                    call->is_intrinsic(Call::div_round_to_zero) || call->is_intrinsic(Call::mod_round_to_zero) ||
-                    call->is_intrinsic(Call::undef)) {
+            if (call->is_intrinsic(Call::reinterpret) || call->is_intrinsic(Call::bitwise_and) ||
+                    call->is_intrinsic(Call::bitwise_not) || call->is_intrinsic(Call::bitwise_xor) ||
+                    call->is_intrinsic(Call::bitwise_or) || call->is_intrinsic(Call::shift_left) ||
+                    call->is_intrinsic(Call::shift_right) || call->is_intrinsic(Call::div_round_to_zero) ||
+                    call->is_intrinsic(Call::mod_round_to_zero) || call->is_intrinsic(Call::undef)) {
                 cost.arith += 1;
             } else if (call->is_intrinsic(Call::abs) || call->is_intrinsic(Call::absd) ||
                        call->is_intrinsic(Call::lerp) || call->is_intrinsic(Call::random) ||
@@ -134,6 +132,10 @@ class ExprCost : public IRVisitor {
         for (size_t i = 0; i < call->args.size(); i++) {
             call->args[i].accept(this);
         }
+    }
+
+    void visit(const Shuffle *op) {
+        cost.arith += 1;
     }
 
     void visit(const Let *let) {
