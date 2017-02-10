@@ -198,14 +198,14 @@ RegionCosts::RegionCosts(const map<string, Function> &_env) : env(_env) {
 
 Cost RegionCosts::stage_region_cost(string func, int stage, const DimBounds &bounds,
                                     const set<string> &inlines) {
-    Function curr_f = env.at(func);
+    Function curr_f = get_element(env, func);
     Definition def = get_stage_definition(curr_f, stage);
 
     Box stage_region;
 
     const vector<Dim> &dims = def.schedule().dims();
     for (int d = 0; d < (int)dims.size() - 1; d++) { // Ignore '__outermost'
-        stage_region.push_back(bounds.at(dims[d].var));
+        stage_region.push_back(get_element(bounds, dims[d].var));
     }
 
     int64_t size = box_size(stage_region);
@@ -216,14 +216,14 @@ Cost RegionCosts::stage_region_cost(string func, int stage, const DimBounds &bou
     }
 
     // If there is nothing to be inlined, use the pre-computed function cost.
-    Cost cost = inlines.empty() ?
-        func_cost.at(func).at(stage) : get_func_stage_cost(curr_f, stage, inlines);
+    Cost cost = inlines.empty() ? get_element(func_cost, func)[stage]
+                                : get_func_stage_cost(curr_f, stage, inlines);
     return Cost(size * cost.arith, size * cost.memory);
 }
 
 Cost RegionCosts::stage_region_cost(string func, int stage, const Box &region,
                                     const set<string> &inlines) {
-    Function curr_f = env.at(func);
+    Function curr_f = get_element(env, func);
     Definition def = get_stage_definition(curr_f, stage);
 
     DimBounds pure_bounds;
@@ -241,7 +241,7 @@ Cost RegionCosts::stage_region_cost(string func, int stage, const Box &region,
 
     const vector<Dim> &dims = def.schedule().dims();
     for (int d = 0; d < (int)dims.size() - 1; d++) { // Ignore '__outermost'
-        stage_region.push_back(stage_bounds.at(dims[d].var));
+        stage_region.push_back(get_element(stage_bounds, dims[d].var));
     }
 
     int64_t size = box_size(stage_region);
@@ -251,13 +251,13 @@ Cost RegionCosts::stage_region_cost(string func, int stage, const Box &region,
         return Cost(unknown, unknown);
     }
 
-    Cost cost = inlines.empty() ?
-        func_cost.at(func).at(stage) : get_func_stage_cost(curr_f, stage, inlines);
+    Cost cost = inlines.empty() ? get_element(func_cost, func)[stage]
+                                : get_func_stage_cost(curr_f, stage, inlines);
     return Cost(size * cost.arith, size * cost.memory);
 }
 
 Cost RegionCosts::region_cost(string func, const Box &region, const set<string> &inlines) {
-    Function curr_f = env.at(func);
+    Function curr_f = get_element(env, func);
     Cost region_cost(0, 0);
 
     int num_stages = curr_f.updates().size() + 1;
@@ -282,7 +282,7 @@ Cost RegionCosts::region_cost(const map<string, Box> &regions, const set<string>
         // The cost for pure inlined functions will be accounted in the
         // consumer of the inlined function so they should be skipped.
         if (inlines.find(f.first) != inlines.end()) {
-            internal_assert(env.at(f.first).is_pure());
+            internal_assert(get_element(env, f.first).is_pure());
             continue;
         }
 
@@ -370,7 +370,7 @@ map<string, int64_t>
 RegionCosts::stage_detailed_load_costs(string func, int stage,
                                        const set<string> &inlines) {
     map<string, int64_t> load_costs;
-    Function curr_f = env.at(func);
+    Function curr_f = get_element(env, func);
     Definition def = get_stage_definition(curr_f, stage);
 
     for (const auto &e : def.values()) {
@@ -395,14 +395,14 @@ map<string, int64_t>
 RegionCosts::stage_detailed_load_costs(string func, int stage,
                                        DimBounds &bounds,
                                        const set<string> &inlines) {
-    Function curr_f = env.at(func);
+    Function curr_f = get_element(env, func);
     Definition def = get_stage_definition(curr_f, stage);
 
     Box stage_region;
 
     const vector<Dim> &dims = def.schedule().dims();
     for (int d = 0; d < (int)dims.size() - 1; d++) { // Ignore '__outermost'
-        stage_region.push_back(bounds.at(dims[d].var));
+        stage_region.push_back(get_element(bounds, dims[d].var));
     }
 
     map<string, int64_t> load_costs = stage_detailed_load_costs(func, stage, inlines);
@@ -424,7 +424,7 @@ RegionCosts::stage_detailed_load_costs(string func, int stage,
 map<string, int64_t>
 RegionCosts::detailed_load_costs(string func, const Box &region,
                                  const set<string> &inlines) {
-    Function curr_f = env.at(func);
+    Function curr_f = get_element(env, func);
     map<string, int64_t> load_costs;
 
     int num_stages = curr_f.updates().size() + 1;
@@ -447,7 +447,7 @@ RegionCosts::detailed_load_costs(string func, const Box &region,
 
         const vector<Dim> &dims = def.schedule().dims();
         for (int d = 0; d < (int)dims.size() - 1; d++) { // Ignore '__outermost'
-            stage_region.push_back(stage_bounds[s].at(dims[d].var));
+            stage_region.push_back(get_element(stage_bounds[s], dims[d].var));
         }
 
         int64_t size = box_size(stage_region);
@@ -475,7 +475,7 @@ RegionCosts::detailed_load_costs(const map<string, Box> &regions,
         // The cost for pure inlined functions will be accounted in the
         // consumer of the inlined function so they should be skipped.
         if (inlines.find(r.first) != inlines.end()) {
-            internal_assert(env.at(r.first).is_pure());
+            internal_assert(get_element(env, r.first).is_pure());
             continue;
         }
 
@@ -542,7 +542,7 @@ vector<Cost> RegionCosts::get_func_cost(const Function &f, const set<string> &in
 }
 
 int64_t RegionCosts::region_size(string func, const Box &region) {
-    const Function &f = env.at(func);
+    const Function &f = get_element(env, func);
     int64_t size = box_size(region);
     if (size == unknown) {
         return unknown;
@@ -558,7 +558,7 @@ int64_t RegionCosts::region_footprint(const map<string, Box> &regions,
         num_consumers[f.first] = 0;
     }
     for (const auto &f : regions) {
-        map<string, Function> prods = find_direct_calls(env.at(f.first));
+        map<string, Function> prods = find_direct_calls(get_element(env, f.first));
         for (const auto &p : prods) {
             auto iter = num_consumers.find(p.first);
             if (iter != num_consumers.end()) {
@@ -570,7 +570,7 @@ int64_t RegionCosts::region_footprint(const map<string, Box> &regions,
     vector<Function> outs;
     for (const auto &f : num_consumers) {
         if (f.second == 0) {
-            outs.push_back(env.at(f.first));
+            outs.push_back(get_element(env, f.first));
         }
     }
 
@@ -595,16 +595,16 @@ int64_t RegionCosts::region_footprint(const map<string, Box> &regions,
 
     for (const auto &f : order) {
         if (regions.find(f) != regions.end()) {
-            curr_size += func_sizes.at(f);
+            curr_size += get_element(func_sizes, f);
         }
         working_set_size = std::max(curr_size, working_set_size);
-        map<string, Function> prods = find_direct_calls(env.at(f));
+        map<string, Function> prods = find_direct_calls(get_element(env, f));
         for (const auto &p : prods) {
             auto iter = num_consumers.find(p.first);
             if (iter != num_consumers.end()) {
                 iter->second -= 1;
                 if (iter->second == 0) {
-                    curr_size -= func_sizes.at(p.first);
+                    curr_size -= get_element(func_sizes, p.first);
                     internal_assert(curr_size >= 0);
                 }
             }
@@ -619,7 +619,7 @@ int64_t RegionCosts::input_region_size(string input, const Box &region) {
     if (size == unknown) {
         return unknown;
     }
-    int64_t size_per_ele = inputs.at(input).bytes();
+    int64_t size_per_ele = get_element(inputs, input).bytes();
     return size * size_per_ele;
 }
 
@@ -647,8 +647,8 @@ void RegionCosts::disp_func_costs() {
             for (const auto &e : def.values()) {
                 debug(debug_level) << simplify(e) << '\n';
             }
-            debug(debug_level) << "(" << kv.first << "," << stage << ")" <<
-                     "(" << cost.arith << "," << cost.memory << ")" << '\n';
+            debug(debug_level) << "(" << kv.first << ", " << stage << ")" <<
+                     " -> (" << cost.arith << ", " << cost.memory << ")" << '\n';
             stage++;
         }
     }

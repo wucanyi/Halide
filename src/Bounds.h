@@ -62,9 +62,14 @@ struct Box {
     bool maybe_unused() const {return used.defined() && !is_one(used);}
 
     friend std::ostream& operator<<(std::ostream& stream, const Box& b) {
+        stream << "{";
         for (size_t dim = 0; dim < b.size(); dim++) {
-            stream << "(" << b[dim].min << ", " << b[dim].max << ")";
+            if (dim > 0) {
+                stream << ", ";
+            }
+            stream << "[" << b[dim].min << ", " << b[dim].max << "]";
         }
+        stream << "}";
         return stream;
     }
 };

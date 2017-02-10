@@ -102,6 +102,24 @@ Expr perform_inline(Expr e, const std::map<std::string, Function> &env,
 /** Return all functions that are directly called by a function stage (f, stage). */
 std::set<std::string> get_parents(Function f, int stage);
 
+/** Return value of element within a map. This will assert if the element is not
+ * in the map. */
+// @{
+template<typename K, typename V>
+V get_element(const std::map<K, V> &m, const K &key) {
+    const auto &iter = m.find(key);
+    internal_assert(iter != m.end());
+    return iter->second;
+}
+
+template<typename K, typename V>
+V &get_element(std::map<K, V> &m, const K &key) {
+    const auto &iter = m.find(key);
+    internal_assert(iter != m.end());
+    return iter->second;
+}
+// @}
+
 }
 }
 
