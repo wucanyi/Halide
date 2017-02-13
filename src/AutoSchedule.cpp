@@ -2073,7 +2073,7 @@ void reorder_dims(Stage f_handle, Definition def, map<string, int64_t> strides, 
         // Find the pure dimension (can be vars or rvars) with the smallest stride
         int64_t min_pure_stride = std::numeric_limits<int64_t>::max();
         string min_pure_var;
-        int index;
+        int min_pure_index = -1;
         for (int d = 0; d < (int)dims.size() - 1; d++) {
             string var_name = get_base_name(dims[d].var);
             const auto &iter = strides.find(var_name);
@@ -2082,7 +2082,7 @@ void reorder_dims(Stage f_handle, Definition def, map<string, int64_t> strides, 
                 if (dim_stride < min_pure_stride) {
                     min_pure_stride = dim_stride;
                     min_pure_var = var_name;
-                    index = d;
+                    min_pure_index = d;
                 }
             }
         }
@@ -2092,6 +2092,7 @@ void reorder_dims(Stage f_handle, Definition def, map<string, int64_t> strides, 
         // an order
         int64_t min_impure_stride = std::numeric_limits<int64_t>::max();
         string min_impure_var;
+        int min_impure_index = -1;
         for (int d = 0; d < (int)dims.size() - 1; d++) {
             string var_name = get_base_name(dims[d].var);
             const auto &iter = strides.find(var_name);
@@ -2100,7 +2101,7 @@ void reorder_dims(Stage f_handle, Definition def, map<string, int64_t> strides, 
                 internal_assert(dim_stride < min_impure_stride);
                 min_impure_stride = dim_stride;
                 min_impure_var = var_name;
-                index = d;
+                min_impure_index = d;
                 // Impure dimensions cannot be reordered relative to
                 // each other. Stop after encountering the first impure
                 // dimension.
@@ -2111,11 +2112,11 @@ void reorder_dims(Stage f_handle, Definition def, map<string, int64_t> strides, 
         pair<string, int> curr_min_var;
         if (min_impure_stride < min_pure_stride) {
             curr_min_var.first = min_impure_var;
-            curr_min_var.second = index;
-            internal_assert(dims[index].is_rvar());
+            curr_min_var.second = min_impure_index;
+            internal_assert(dims[min_impure_index].is_rvar());
         } else {
             curr_min_var.first = min_pure_var;
-            curr_min_var.second = index;
+            curr_min_var.second = min_pure_index;
         }
 
         order.push_back(curr_min_var);
