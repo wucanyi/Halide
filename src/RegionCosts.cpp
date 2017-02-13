@@ -206,7 +206,7 @@ Cost RegionCosts::stage_region_cost(string func, int stage, const DimBounds &bou
     Box stage_region;
 
     const vector<Dim> &dims = def.schedule().dims();
-    for (int d = 0; d < (int)dims.size() - 1; d++) { // Ignore '__outermost'
+    for (int d = 0; d < (int)dims.size() - 1; d++) {
         stage_region.push_back(get_element(bounds, dims[d].var));
     }
 
@@ -226,7 +226,6 @@ Cost RegionCosts::stage_region_cost(string func, int stage, const DimBounds &bou
 Cost RegionCosts::stage_region_cost(string func, int stage, const Box &region,
                                     const set<string> &inlines) {
     Function curr_f = get_element(env, func);
-    Definition def = get_stage_definition(curr_f, stage);
 
     DimBounds pure_bounds;
     const vector<string> &args = curr_f.args();
@@ -236,26 +235,7 @@ Cost RegionCosts::stage_region_cost(string func, int stage, const Box &region,
     }
 
     DimBounds stage_bounds = get_stage_bounds(curr_f, stage, pure_bounds);
-
-    // TODO: Remove code duplication. The exact same code is present in
-    // the other stage_region_cost.
-    Box stage_region;
-
-    const vector<Dim> &dims = def.schedule().dims();
-    for (int d = 0; d < (int)dims.size() - 1; d++) { // Ignore '__outermost'
-        stage_region.push_back(get_element(stage_bounds, dims[d].var));
-    }
-
-    int64_t size = box_size(stage_region);
-    if (size == unknown) {
-        // Size could not be determined therefore it is not possible to
-        // determine the arithmetic and memory costs.
-        return Cost(unknown, unknown);
-    }
-
-    Cost cost = inlines.empty() ? get_element(func_cost, func)[stage]
-                                : get_func_stage_cost(curr_f, stage, inlines);
-    return Cost(size * cost.arith, size * cost.memory);
+    return stage_region_cost(func, stage, stage_bounds, inlines);
 }
 
 Cost RegionCosts::region_cost(string func, const Box &region, const set<string> &inlines) {
@@ -403,7 +383,7 @@ RegionCosts::stage_detailed_load_costs(string func, int stage,
     Box stage_region;
 
     const vector<Dim> &dims = def.schedule().dims();
-    for (int d = 0; d < (int)dims.size() - 1; d++) { // Ignore '__outermost'
+    for (int d = 0; d < (int)dims.size() - 1; d++) {
         stage_region.push_back(get_element(bounds, dims[d].var));
     }
 
@@ -448,7 +428,7 @@ RegionCosts::detailed_load_costs(string func, const Box &region,
         Box stage_region;
 
         const vector<Dim> &dims = def.schedule().dims();
-        for (int d = 0; d < (int)dims.size() - 1; d++) { // Ignore '__outermost'
+        for (int d = 0; d < (int)dims.size() - 1; d++) {
             stage_region.push_back(get_element(stage_bounds[s], dims[d].var));
         }
 

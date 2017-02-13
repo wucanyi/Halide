@@ -1022,12 +1022,12 @@ map<string, int64_t> Partitioner::evaluate_reuse(const FStage &stg,
 
     Definition def = get_stage_definition(stg.func, stg.stage_num);
 
-    // TODO: Check if tile sizes of 1 in each dimension gives a reasonable
+    // TODO: Check if tile size of 1 in each dimension gives a reasonable
     // answer or reuse should be evaluated at a much larger granularity or
-    // symbolically.  Using a symbolic version might be better if the objective
+    // symbolically. Using a symbolic version might be better if the objective
     // is to prove the dimension has no reuse. The only downside with the
-    // symbolic method is it totally at the mercy of the simplifier.  Another
-    // option is sampling or using a larger granularity.
+    // symbolic method is that it is totally at the mercy of the simplifier.
+    // Another option is sampling or using a larger granularity.
     map<string, int> tile_sizes;
 
     const vector<Dim> &dims = def.schedule().dims();
@@ -1141,8 +1141,6 @@ vector<map<string, int>> Partitioner::generate_tile_configs(const FStage &stg) {
 
     // For all the tile configurations generated, we force the innermost dimension
     // to be at least of size 64 to ensure enough values for vectorization.
-
-    // TODO: Add comments explaining the different tiling schemes.
 
     // Skewed tile configurations
     for (size_t i = 0; i < tile_vars.size(); i++) {
@@ -1572,7 +1570,6 @@ Partitioner::GroupAnalysis Partitioner::analyze_group(const Group &g, bool show_
 
     Cost per_tile_cost(group_cost.arith, 0);
 
-    // TODO: Add comments on the cost model
     // This is the old cost model; keeping it here for reference, for now.
     /*
     if (tile_inter_size > arch_params.l1_size) {
