@@ -127,6 +127,12 @@ int main(int argc, char **argv) {
     std::cout << "Manual time: " << manual_time << "ms" << std::endl;
     std::cout << "Auto time: " << auto_time << "ms" << std::endl;
     std::cout << "======================" << std::endl;
+
+    if (auto_time > manual_time * 2) {
+        printf("Auto-scheduler is much much slower than it should be.\n");
+        return -1;
+    }
+
     printf("Success!\n");
     return 0;
 }

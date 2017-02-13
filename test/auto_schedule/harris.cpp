@@ -88,7 +88,7 @@ double run_test(bool auto_schedule) {
             Iy.compute_at(shifted, Var::gpu_blocks()).gpu_threads(x, y);
         } else {
             shifted.tile(x, y, xi, yi, 128, 128)
-                    .vectorize(xi, 8).parallel(y);
+                   .vectorize(xi, 8).parallel(y);
             Ix.compute_at(shifted, x).vectorize(x, 8);
             Iy.compute_at(shifted, x).vectorize(x, 8);
         }
@@ -117,6 +117,12 @@ int main(int argc, char **argv) {
     std::cout << "Manual time: " << manual_time << "ms" << std::endl;
     std::cout << "Auto time: " << auto_time << "ms" << std::endl;
     std::cout << "======================" << std::endl;
+
+    if (3 * auto_time > manual_time) {
+        printf("Auto-scheduler is much much slower than it should be.\n");
+        return -1;
+    }
+
     printf("Success!\n");
     return 0;
 }
