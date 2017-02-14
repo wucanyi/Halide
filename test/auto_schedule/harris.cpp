@@ -25,7 +25,7 @@ double run_test(bool auto_schedule) {
 
     Func in_b = BoundaryConditions::repeat_edge(in);
 
-    Var x, y, c;
+    Var x("x"), y("y"), c("c");
 
     Func gray("gray");
     gray(x, y) = 0.299f * in_b(x, y, 0) + 0.587f * in_b(x, y, 1) + 0.114f * in_b(x, y, 2);

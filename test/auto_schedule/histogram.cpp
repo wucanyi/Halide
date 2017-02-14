@@ -16,7 +16,7 @@ double run_test(bool auto_schedule) {
         }
     }
 
-    Var x, y, c;
+    Var x("x"), y("y"), c("c");
 
     Func Y("Y");
     Y(x, y) = 0.299f * in(x, y, 0) + 0.587f * in(x, y, 1)

@@ -74,7 +74,7 @@ double run_test(bool auto_schedule) {
 
     // Our input is an ImageParam, but blur_cols takes a Func, so
     // we define a trivial func to wrap the input.
-    Func input_func;
+    Func input_func("input_func");
     input_func(x, y, c) = input(x, y, c);
 
     // First, blur the columns of the input.

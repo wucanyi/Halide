@@ -1,12 +1,12 @@
-#include <stdio.h>
 #include "Halide.h"
+#include "benchmark.h"
 
 using namespace Halide;
 
-int main(int argc, char **argv) {
-    Func fib, g;
-    Var x;
-    RDom r(2, 18);
+double run_test(bool auto_schedule) {
+    Func fib("fib"), g("g");
+    Var x("x");
+    RDom r(2, 298, "r");
 
     fib(x) = 1;
     fib(r) = fib(r-2) + fib(r-1);
@@ -14,19 +14,44 @@ int main(int argc, char **argv) {
     g(x) = fib(x+10);
 
     // Provide estimates for pipeline output
-    g.estimate(x, 0, 50);
+    g.estimate(x, 0, 300);
 
     // Auto schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(g);
 
-    p.auto_schedule(target);
+    if (!auto_schedule) {
+
+    } else {
+        p.auto_schedule(target);
+    }
 
     // Inspect the schedule
     g.print_loop_nest();
 
-    // Run the schedule
-    Buffer<int> out = p.realize(10);
+    // Benchmark the schedule
+    Buffer<int> out(100);
+    double t = benchmark(3, 10, [&]() {
+        p.realize(out);
+    });
+
+    return t*1000;
+}
+
+
+int main(int argc, char **argv) {
+    double manual_time = run_test(false);
+    double auto_time = run_test(true);
+
+    std::cout << "======================" << std::endl;
+    std::cout << "Manual time: " << manual_time << "ms" << std::endl;
+    std::cout << "Auto time: " << auto_time << "ms" << std::endl;
+    std::cout << "======================" << std::endl;
+
+    if (auto_time > manual_time * 2) {
+        printf("Auto-scheduler is much much slower than it should be.\n");
+        return -1;
+    }
 
     printf("Success!\n");
     return 0;

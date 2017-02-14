@@ -873,6 +873,27 @@ struct Partitioner {
                                        const map<string, Box> &group_storage_bounds,
                                        const set<string> &inlines);
 
+    /** Split the dimension of stage 'f_handle' along 'v' into inner and outer
+     * dimensions. Modify 'estimates' according to the split and append the split
+     * schedule to 'sched' */
+    pair<VarOrRVar, VarOrRVar> split_dim(
+        const Group &g, Stage f_handle, int stage_num, Definition def,
+        bool is_group_output, VarOrRVar v, int factor, string in_suffix,
+        string out_suffix, map<string, int64_t> &estimates, string &sched);
+
+    /** Loop over the dimensions of function stage 'f_handle' starting from innermost
+     * and vectorize the first pure dimension encountered. */
+    void vectorize_stage(
+        const Group &g, Stage f_handle, int stage_num, Definition def,
+        Function func, bool is_group_output, const Target &t, set<string> &rvars,
+        map<string, int64_t> &estimates, string &sched);
+
+    /** Reorder the dimensions to preserve spatial locality. This function
+     * checks the stride of each access. The dimensions of the loop are reordered
+     * such that the dimension with the smallest access stride is innermost.
+     * This takes the strides along each dimension as input. */
+    void reorder_dims(Stage f_handle, Definition def, map<string, int64_t> strides, string &sched);
+
     /** Helper function to display partition information of the pipeline. */
     // @{
     void disp_pipeline_costs(int dlevel);
@@ -1963,28 +1984,124 @@ string get_base_name(string name) {
     return name;
 }
 
-/** Split the dimension of stage 'f_handle' along 'v' into inner and outer
- * dimensions. Modify 'estimates' according to the split and append the split
- * schedule to 'sched' */
-pair<VarOrRVar, VarOrRVar> split_dim(Stage f_handle, VarOrRVar v, int factor,
-                                     string in_suffix, string out_suffix,
-                                     map<string, int64_t> &estimates, string &sched) {
+/** Return true if any of the values or args in 'def' refers to any of
+ * the inputs or outputs, with access function which depends on 'var'. */
+bool access_inputs_or_outputs(Definition def, VarOrRVar var,
+                              const map<string, Type> &inputs,
+                              const vector<Function> &outputs) {
+    FindAllCalls find;
+    def.accept(&find);
+
+    for (size_t i = 0; i < find.call_args.size(); ++i) {
+        const string &func = find.call_args[i].first;
+        const vector<Expr> &args = find.call_args[i].second;
+
+        if (inputs.find(func) == inputs.end()) {
+            // Check if 'func' is an output
+            bool is_output =
+                std::find_if(outputs.begin(), outputs.end(),
+                            [&func](const Function &f) { return (f.name() == func);})
+                != outputs.end();
+            if (!is_output) {
+                // 'func' is neither an input or an output
+                continue;
+            }
+        }
+
+        // Check if any of the accesses to 'func' depends on 'var'
+        for (const auto &arg : args) {
+            if (expr_uses_var(arg, var.name())) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+pair<VarOrRVar, VarOrRVar> Partitioner::split_dim(
+        const Group &g, Stage f_handle, int stage_num, Definition def,
+        bool is_group_output, VarOrRVar v, int factor, string in_suffix,
+        string out_suffix, map<string, int64_t> &estimates, string &sched) {
     // Create new variables for the split dimensions
     string arg_name = v.name();
     string inner_name = arg_name + in_suffix;
     string outer_name = arg_name + out_suffix;
-    VarOrRVar inner(inner_name), outer(outer_name);
+    VarOrRVar inner(inner_name, v.is_rvar), outer(outer_name, v.is_rvar);
 
-    sched += "Var " + inner_name + "(\"" + inner_name + "\")" + ";\n";
-    sched += "Var " + outer_name + "(\"" + outer_name + "\")" + ";\n";
+    if (v.is_rvar) {
+        sched += "RVar " + inner_name + "(\"" + inner_name + "\")" + ";\n";
+        sched += "RVar " + outer_name + "(\"" + outer_name + "\")" + ";\n";
+    } else {
+        sched += "Var " + inner_name + "(\"" + inner_name + "\")" + ";\n";
+        sched += "Var " + outer_name + "(\"" + outer_name + "\")" + ";\n";
+    }
 
-    f_handle.split(v, outer, inner, factor);
+    // The default tail strategy is good enough for most use cases (see docs on
+    // TailStrategy::Auto). However, the default of pure vars in update definitions
+    // is RoundUp, which may introduces an out-of-bound error if it is an access
+    // to inputs or outputs.
+    //
+    // We could have just used GuardWithIf when splitting pure vars in update
+    // definition to ensure no out-of-bounds error. However, this is only
+    // necessary, if the update definition involves accesses to inputs or outputs.
+    // For other accesses, we could potentially use a more aggressive tail strategy
+    // such as RoundUp or ShiftInwards. Note that if we use RoundUp or ShiftInwards,
+    // any nested loops (generated by compute_at) will be affected as well. However,
+    // since in the current auto-scheduler model, we always compute_at at the group
+    // output, if the update definition is not the group output, we do not need to
+    // care for the nested loops. If it is the update definition of the group output
+    // however, we'd better make sure that no other member of the groups accesses
+    // the inputs or outputs.
+    TailStrategy strategy = TailStrategy::Auto;
+    if ((stage_num > 0) && !v.is_rvar) {
+        if (!is_group_output) {
+            if (access_inputs_or_outputs(def, v, costs.inputs, outputs)) {
+                strategy = TailStrategy::GuardWithIf;
+            }
+        } else {
+            bool any_access_inputs_outputs = false;
+            for (const FStage &mem : g.members) {
+                if (mem.func.name() == f_handle.name()) {
+                    continue;
+                }
+                Definition mem_def = get_stage_definition(mem.func, mem.stage_num);
+                if (access_inputs_or_outputs(mem_def, v, costs.inputs, outputs)) {
+                    any_access_inputs_outputs = true;
+                    break;
+                }
+            }
+            if (any_access_inputs_outputs) {
+                strategy = TailStrategy::GuardWithIf;
+            }
+        }
+    }
+
+    string strategy_str;
+    switch (strategy) {
+        case TailStrategy::RoundUp:
+            strategy_str = "TailStrategy::RoundUp";
+            break;
+        case TailStrategy::GuardWithIf:
+            strategy_str = "TailStrategy::GuardWithIf";
+            break;
+        case TailStrategy::ShiftInwards:
+            strategy_str = "TailStrategy::ShiftInwards";
+            break;
+        case TailStrategy::Auto:
+            strategy_str = "TailStrategy::Auto";
+            break;
+        default:
+            internal_assert(false);
+    }
+
+    f_handle.split(v, outer, inner, factor, strategy);
 
     sched += f_handle.name() + ".split(" + arg_name + ", " + outer_name + ", " +
-             inner_name + ", " + std::to_string(factor) + ");\n";
+             inner_name + ", " + std::to_string(factor) + ", " + strategy_str + ");\n";
 
-    internal_assert(estimates.find(arg_name) != estimates.end() &&
-                    estimates[arg_name] != unknown);
+    internal_assert((estimates.find(arg_name) != estimates.end()) &&
+                    (estimates[arg_name] != unknown));
 
     estimates[inner_name] = factor;
     estimates[outer_name] = std::ceil((float)get_element(estimates, arg_name) / factor);
@@ -1993,11 +2110,10 @@ pair<VarOrRVar, VarOrRVar> split_dim(Stage f_handle, VarOrRVar v, int factor,
     return make_pair(inner, outer);
 }
 
-/** Loop over the dimensions of function stage 'f_handle' starting from innermost
- * and vectorize the first pure dimension encountered. */
-void vectorize_stage(Stage f_handle, Definition def, Function func,
-                     const Target &t, set<string> &rvars,
-                     map<string, int64_t> &estimates, string &sched) {
+void Partitioner::vectorize_stage(const Group &g, Stage f_handle, int stage_num,
+                                  Definition def, Function func, bool is_group_output,
+                                  const Target &t, set<string> &rvars,
+                                  map<string, int64_t> &estimates, string &sched) {
     vector<Dim> &dims = def.schedule().dims();
     int vec_dim_index = -1;
 
@@ -2025,13 +2141,13 @@ void vectorize_stage(Stage f_handle, Definition def, Function func,
 
     if (vec_dim_index >= 0) {
         string vec_dim_name = get_base_name(dims[vec_dim_index].var);
-        Var vec_var(vec_dim_name);
-
         bool is_rvar = (rvars.find(vec_dim_name) != rvars.end());
         internal_assert(is_rvar == dims[vec_dim_index].is_rvar());
 
+        VarOrRVar vec_var(vec_dim_name, is_rvar);
         pair<VarOrRVar, VarOrRVar> split_vars =
-            split_dim(f_handle, vec_var, vec_len, "_vi", "_vo", estimates, sched);
+            split_dim(g, f_handle, stage_num, def, is_group_output, vec_var, vec_len,
+                      "_vi", "_vo", estimates, sched);
 
         f_handle.vectorize(split_vars.first);
         sched += f_handle.name() + ".vectorize(" + split_vars.first.name() + ");\n";
@@ -2053,11 +2169,8 @@ void vectorize_stage(Stage f_handle, Definition def, Function func,
     }
 }
 
-/** Reorder the dimensions to preserve spatial locality. This function
- * checks the stride of each access. The dimensions of the loop are reordered
- * such that the dimension with the smallest access stride is innermost.
- * This takes the strides along each dimension as input. */
-void reorder_dims(Stage f_handle, Definition def, map<string, int64_t> strides, string &sched) {
+void Partitioner::reorder_dims(Stage f_handle, Definition def,
+                               map<string, int64_t> strides, string &sched) {
     vector<Dim> &dims = def.schedule().dims();
     vector<pair<string, bool>> order;
 
@@ -2230,7 +2343,8 @@ string Partitioner::generate_group_cpu_schedule(
             int tile_size = iter->second;
             if (tile_size > 1) {
                 pair<VarOrRVar, VarOrRVar> tile_vars =
-                    split_dim(f_handle, v, tile_size, "_i", "_o", stg_estimates, sched);
+                    split_dim(g, f_handle, g.output.stage_num, def, true, v,
+                              tile_size, "_i", "_o", stg_estimates, sched);
 
                 inner_dims.push_back(tile_vars.first);
                 outer_dims.push_back(tile_vars.second);
@@ -2269,7 +2383,8 @@ string Partitioner::generate_group_cpu_schedule(
         sched += f_handle.name() + ".reorder(" + var_order + ");\n";
     }
 
-    vectorize_stage(f_handle, def, g_out, t, rvars, stg_estimates, sched);
+    vectorize_stage(g, f_handle, g.output.stage_num, def, g_out, true, t,
+                    rvars, stg_estimates, sched);
 
     // Parallelize definition
     uint32_t def_par = 1;
@@ -2380,8 +2495,8 @@ string Partitioner::generate_group_cpu_schedule(
             analyze_spatial_locality(mem, group_storage_bounds, inlines);
         reorder_dims(mem_handle, mem_def, mem_strides, sched);
 
-        vectorize_stage(mem_handle, mem_def, mem.func, t, mem_rvars,
-                        mem_estimates, sched);
+        vectorize_stage(g, mem_handle, mem.stage_num, mem_def, mem.func, false,
+                        t, mem_rvars, mem_estimates, sched);
     }
 
     return sched;
@@ -2400,15 +2515,17 @@ string Partitioner::generate_cpu_schedule(const Target &t) {
     for (const pair<FStage, Group> &g : groups) {
         for (const string &inline_func : g.second.inlined) {
             inlines.insert(inline_func);
-            Function f = get_element(dep_analysis.env, inline_func);
-            Func f_handle(f);
-            // TODO: Inlining functions with update definitions has different
-            // behavior than pure functions. They may need to be computed above
-            // the innermost vector loop to avoid complications with varying
-            // extents across different vector lanes.
-            f_handle.compute_inline();
-            sched += f_handle.name() + ".compute_inline()" + ";\n";
         }
+    }
+    for (const auto &inline_func : inlines) {
+        Function f = get_element(dep_analysis.env, inline_func);
+        Func f_handle(f);
+        // TODO: Inlining functions with update definitions has different
+        // behavior than pure functions. They may need to be computed above
+        // the innermost vector loop to avoid complications with varying
+        // extents across different vector lanes.
+        f_handle.compute_inline();
+        sched += f_handle.name() + ".compute_inline()" + ";\n";
     }
 
     // Realize schedule for each group in the pipeline.

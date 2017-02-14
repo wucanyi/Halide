@@ -6,7 +6,7 @@ using namespace Halide;
 #include <iostream>
 #include <limits>
 
-Var x, y, z, c;
+Var x("x"), y("y"), z("z"), c("c");
 
 // Downsample with a 1 3 3 1 filter
 Func downsample(Func f) {

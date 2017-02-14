@@ -21,7 +21,7 @@ double run_test(bool auto_schedule) {
         }
     }
 
-    Var x, y;
+    Var x("x"), y("y");
 
     Func prod("prod");
     RDom r(0, size);

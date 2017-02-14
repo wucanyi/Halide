@@ -9,12 +9,12 @@ double run_test_1(bool auto_schedule) {
 
     int pad = 1; // padding required to handle boundaries
 
-    Func f_in_bound;
+    Func f_in_bound("f_in_bound");
     f_in_bound = BoundaryConditions::repeat_edge(data, 0, 128,
                                                  0, 128);
     Buffer<float> W(3, 3, 64, 64), b(64);
 
-    Var x, y, z, n;
+    Var x("x"), y("y"), z("z"), n("n");
 
     Func f_conv("conv");
     RDom r(0, 3, 0, 3, 0, 64);
@@ -110,7 +110,7 @@ double run_test_2(bool auto_schedule) {
     Buffer<float> data(131, 131, 64, 4);
     Buffer<float> W(3, 3, 64, 64), b(64);
 
-    Var x, y, z, n;
+    Var x("x"), y("y"), z("z"), n("n");
 
     Func f_conv("conv");
     RDom r(0, 3, 0, 3, 0, 64);
