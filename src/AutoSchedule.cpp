@@ -65,7 +65,11 @@ struct FStage {
     }
 
     friend std::ostream& operator<<(std::ostream &stream, const FStage &s) {
-        stream << "(" << s.func.name() << ", " << s.stage_num << ")";
+        if (s.stage_num == 0) {
+            stream << s.func.name();
+        } else {
+            stream << s.func.name() << ".update(" << (s.stage_num - 1) << ")";
+        }
         return stream;
     }
 };
@@ -560,6 +564,58 @@ map<string, Box> get_pipeline_bounds(DependenceAnalysis &analysis,
     return pipeline_bounds;
 }
 
+struct AutoSchedule {
+    /** Cache for storing all internal vars/rvars that have been declared during
+     * the course of schedule generation, to ensure that we don't introduce any
+     * duplicates in the string representation of the schedules. */
+    map<string, VarOrRVar> vars_declared;
+
+    /** Store the list of schedules applied to some function stages (most recent
+     * schedule is placed last in the list). The map is indexed by the string
+     * representation of a function stage, e.g. f, f.update(0), etc. */
+    map<string, vector<string>> func_schedules;
+
+    friend std::ostream& operator<<(std::ostream &stream, const AutoSchedule &sched) {
+        for (const auto &iter : sched.vars_declared) {
+            if (iter.second.is_rvar) {
+                stream << "RVar ";
+            } else {
+                stream << "Var ";
+            }
+            stream << iter.first << "(\"" << iter.first << "\");\n";
+        }
+
+        for (const auto &iter : sched.func_schedules) {
+            internal_assert(!iter.second.empty());
+            stream << iter.first << "." << iter.second[0];
+            for (size_t i = 1; i < iter.second.size(); ++i) {
+                stream << "\n    ." << iter.second[i];
+            }
+            stream << ";\n";
+        }
+
+        return stream;
+    }
+
+    void push_schedule(const string &stage, int stage_num, const string &sched) {
+        // We want the schedule on an update stage to be on a new line, e.g.
+        // f.update(0)
+        //    .parallel(x);
+        string key = (stage_num == 0) ? stage : stage + "\n    ";
+        auto &schedules = func_schedules[key];
+
+        // If the previous schedule applied is the same as this one,
+        // there is no need to re-apply the schedule
+        if (schedules.empty()) {
+            schedules.push_back(sched);
+        } else {
+            if (schedules[schedules.size()-1] != sched) {
+                schedules.push_back(sched);
+            }
+        }
+    }
+};
+
 /** Implement the grouping algorithm and the cost model for making the grouping
  * choices. */
 struct Partitioner {
@@ -851,8 +907,7 @@ struct Partitioner {
     map<string, int64_t> evaluate_reuse(const FStage &stg, const set<string> &prods);
 
     /** Generate and apply schedules for all functions within a pipeline by
-     * following their grouping structure. This also returns a string representation
-     * of the schedules.
+     * following their grouping structure.
      *
      * TODO: A mode where schedules are not applied to the functions might be
      * interesting.
@@ -863,36 +918,38 @@ struct Partitioner {
      * visible to the user. Additionally, functions like sum and maximum are not
      * user visible. More thought needs to go into interaction between the user and
      * auto scheduling. */
-    string generate_cpu_schedule(const Target &t);
+    void generate_cpu_schedule(const Target &t, AutoSchedule &sched);
 
     /** Same as \ref Partitioner::generate_cpu_schedule, but this generates and
      * applies schedules for a group of function stages.
      */
-    string generate_group_cpu_schedule(const Group &g, const Target &t,
-                                       const map<FStage, DimBounds> &group_loop_bounds,
-                                       const map<string, Box> &group_storage_bounds,
-                                       const set<string> &inlines);
+    void generate_group_cpu_schedule(const Group &g, const Target &t,
+                                     const map<FStage, DimBounds> &group_loop_bounds,
+                                     const map<string, Box> &group_storage_bounds,
+                                     const set<string> &inlines,
+                                     AutoSchedule &sched);
 
     /** Split the dimension of stage 'f_handle' along 'v' into inner and outer
      * dimensions. Modify 'estimates' according to the split and append the split
-     * schedule to 'sched' */
+     * schedule to 'sched'. */
     pair<VarOrRVar, VarOrRVar> split_dim(
         const Group &g, Stage f_handle, int stage_num, Definition def,
         bool is_group_output, VarOrRVar v, int factor, string in_suffix,
-        string out_suffix, map<string, int64_t> &estimates, string &sched);
+        string out_suffix, map<string, int64_t> &estimates, AutoSchedule &sched);
 
     /** Loop over the dimensions of function stage 'f_handle' starting from innermost
      * and vectorize the first pure dimension encountered. */
     void vectorize_stage(
         const Group &g, Stage f_handle, int stage_num, Definition def,
         Function func, bool is_group_output, const Target &t, set<string> &rvars,
-        map<string, int64_t> &estimates, string &sched);
+        map<string, int64_t> &estimates, AutoSchedule &sched);
 
     /** Reorder the dimensions to preserve spatial locality. This function
      * checks the stride of each access. The dimensions of the loop are reordered
      * such that the dimension with the smallest access stride is innermost.
      * This takes the strides along each dimension as input. */
-    void reorder_dims(Stage f_handle, Definition def, map<string, int64_t> strides, string &sched);
+    void reorder_dims(Stage f_handle, int stage_num, Definition def,
+                      map<string, int64_t> strides, AutoSchedule &sched);
 
     /** Helper function to display partition information of the pipeline. */
     // @{
@@ -964,7 +1021,7 @@ void Partitioner::disp_pipeline_costs() {
 
         debug(3) << "Group: " << g.first << " [";
         debug(3) << analysis.cost.arith << ", " << analysis.cost.memory
-                      << ", " << analysis.parallelism << "]\n";
+                 << ", " << analysis.parallelism << "]\n";
     }
     debug(3) << "Total arithmetic cost: " << total_cost.arith << '\n';
     debug(3) << "Total memory cost: " << total_cost.memory << '\n';
@@ -2022,19 +2079,28 @@ bool access_inputs_or_outputs(Definition def, VarOrRVar var,
 pair<VarOrRVar, VarOrRVar> Partitioner::split_dim(
         const Group &g, Stage f_handle, int stage_num, Definition def,
         bool is_group_output, VarOrRVar v, int factor, string in_suffix,
-        string out_suffix, map<string, int64_t> &estimates, string &sched) {
+        string out_suffix, map<string, int64_t> &estimates, AutoSchedule &sched) {
     // Create new variables for the split dimensions
     string arg_name = v.name();
     string inner_name = arg_name + in_suffix;
     string outer_name = arg_name + out_suffix;
     VarOrRVar inner(inner_name, v.is_rvar), outer(outer_name, v.is_rvar);
 
-    if (v.is_rvar) {
-        sched += "RVar " + inner_name + "(\"" + inner_name + "\")" + ";\n";
-        sched += "RVar " + outer_name + "(\"" + outer_name + "\")" + ";\n";
-    } else {
-        sched += "Var " + inner_name + "(\"" + inner_name + "\")" + ";\n";
-        sched += "Var " + outer_name + "(\"" + outer_name + "\")" + ";\n";
+    {
+        const auto &iter = sched.vars_declared.find(inner.name());
+        if (iter == sched.vars_declared.end()) {
+            sched.vars_declared.emplace(inner.name(), inner);
+        } else {
+            internal_assert(iter->second.is_rvar == inner.is_rvar);
+        }
+    }
+    {
+        const auto &iter = sched.vars_declared.find(outer.name());
+        if (iter == sched.vars_declared.end()) {
+            sched.vars_declared.emplace(outer.name(), outer);
+        } else {
+            internal_assert(iter->second.is_rvar == outer.is_rvar);
+        }
     }
 
     // The default tail strategy is good enough for most use cases (see docs on
@@ -2077,28 +2143,26 @@ pair<VarOrRVar, VarOrRVar> Partitioner::split_dim(
         }
     }
 
-    string strategy_str;
+    f_handle.split(v, outer, inner, factor, strategy);
+
+    string schedule_str = "split(" + arg_name + ", " + outer_name + ", " + inner_name + ", " + std::to_string(factor);
     switch (strategy) {
         case TailStrategy::RoundUp:
-            strategy_str = "TailStrategy::RoundUp";
+            schedule_str += ", TailStrategy::RoundUp)";
             break;
         case TailStrategy::GuardWithIf:
-            strategy_str = "TailStrategy::GuardWithIf";
+            schedule_str += ", TailStrategy::GuardWithIf)";
             break;
         case TailStrategy::ShiftInwards:
-            strategy_str = "TailStrategy::ShiftInwards";
+            schedule_str += ", TailStrategy::ShiftInwards)";
             break;
         case TailStrategy::Auto:
-            strategy_str = "TailStrategy::Auto";
+            schedule_str += ")";
             break;
         default:
             internal_assert(false);
     }
-
-    f_handle.split(v, outer, inner, factor, strategy);
-
-    sched += f_handle.name() + ".split(" + arg_name + ", " + outer_name + ", " +
-             inner_name + ", " + std::to_string(factor) + ", " + strategy_str + ");\n";
+    sched.push_schedule(f_handle.name(), stage_num, schedule_str);
 
     internal_assert((estimates.find(arg_name) != estimates.end()) &&
                     (estimates[arg_name] != unknown));
@@ -2113,7 +2177,7 @@ pair<VarOrRVar, VarOrRVar> Partitioner::split_dim(
 void Partitioner::vectorize_stage(const Group &g, Stage f_handle, int stage_num,
                                   Definition def, Function func, bool is_group_output,
                                   const Target &t, set<string> &rvars,
-                                  map<string, int64_t> &estimates, string &sched) {
+                                  map<string, int64_t> &estimates, AutoSchedule &sched) {
     vector<Dim> &dims = def.schedule().dims();
     int vec_dim_index = -1;
 
@@ -2150,7 +2214,7 @@ void Partitioner::vectorize_stage(const Group &g, Stage f_handle, int stage_num,
                       "_vi", "_vo", estimates, sched);
 
         f_handle.vectorize(split_vars.first);
-        sched += f_handle.name() + ".vectorize(" + split_vars.first.name() + ");\n";
+        sched.push_schedule(f_handle.name(), stage_num, "vectorize(" + split_vars.first.name() + ")");
 
         if (is_rvar) {
             rvars.erase(vec_dim_name);
@@ -2169,8 +2233,8 @@ void Partitioner::vectorize_stage(const Group &g, Stage f_handle, int stage_num,
     }
 }
 
-void Partitioner::reorder_dims(Stage f_handle, Definition def,
-                               map<string, int64_t> strides, string &sched) {
+void Partitioner::reorder_dims(Stage f_handle, int stage_num, Definition def,
+                               map<string, int64_t> strides, AutoSchedule &sched) {
     vector<Dim> &dims = def.schedule().dims();
     vector<pair<string, bool>> order;
 
@@ -2245,7 +2309,7 @@ void Partitioner::reorder_dims(Stage f_handle, Definition def,
     }
 
     f_handle.reorder(ordering);
-    sched += f_handle.name() + ".reorder(" + var_order + ");\n";
+    sched.push_schedule(f_handle.name(), stage_num, "reorder(" + var_order + ")");
 }
 
 /** Visitor to find all the variables the depend on a variable. */
@@ -2267,12 +2331,12 @@ public :
     }
 };
 
-string Partitioner::generate_group_cpu_schedule(
+void Partitioner::generate_group_cpu_schedule(
         const Group &g, const Target &t,
         const map<FStage, DimBounds> &group_loop_bounds,
         const map<string, Box> &group_storage_bounds,
-        const set<string> &inlines) {
-    string sched = "";
+        const set<string> &inlines,
+        AutoSchedule &sched) {
     string out_f_name = g.output.func.name();
     Function g_out = g.output.func;
 
@@ -2296,12 +2360,12 @@ string Partitioner::generate_group_cpu_schedule(
         f_handle = Func(g_out).update(stage_num - 1);
     } else {
         Func(g_out).compute_root();
-        sched += f_handle.name() + ".compute_root();\n";
+        sched.push_schedule(f_handle.name(), g.output.stage_num, "compute_root()");
     }
 
     if (g.output.func.has_extern_definition()) {
         internal_assert(g.members.size() == 1);
-        return sched;
+        return;
     }
 
     // Realize tiling and update the dimension estimates
@@ -2324,7 +2388,7 @@ string Partitioner::generate_group_cpu_schedule(
     // is innermost)
     map<string, int64_t> strides =
         analyze_spatial_locality(g.output, group_storage_bounds, inlines);
-    reorder_dims(f_handle, def, strides, sched);
+    reorder_dims(f_handle, g.output.stage_num, def, strides, sched);
 
     vector<string> dim_vars(dims.size() - 1);
     for (size_t d = 0; d < dims.size() - 1; d++) {
@@ -2380,7 +2444,7 @@ string Partitioner::generate_group_cpu_schedule(
         }
 
         f_handle.reorder(ordering);
-        sched += f_handle.name() + ".reorder(" + var_order + ");\n";
+        sched.push_schedule(f_handle.name(), g.output.stage_num, "reorder(" + var_order + ")");
     }
 
     vectorize_stage(g, f_handle, g.output.stage_num, def, g_out, true, t,
@@ -2420,10 +2484,10 @@ string Partitioner::generate_group_cpu_schedule(
                 if (seq_var != "") {
                     VarOrRVar seq(seq_var, (rvars.find(seq_var) != rvars.end()));
                     f_handle.reorder(seq, v);
-                    sched += f_handle.name() + ".reorder(" + seq_var + ", " + var + ");\n";
+                    sched.push_schedule(f_handle.name(), g.output.stage_num, "reorder(" + seq_var + ")");
                 }
                 f_handle.parallel(v);
-                sched += f_handle.name() + ".parallel(" + var + ");\n";
+                sched.push_schedule(f_handle.name(), g.output.stage_num, "parallel(" + var + ")");
                 def_par *= iter->second;
             } else {
                 break;
@@ -2479,32 +2543,27 @@ string Partitioner::generate_group_cpu_schedule(
                 } else {
                     Func(mem.func).compute_at(Func(g_out), tile_inner_var.var);
                 }
-                sched += mem_handle.name() + ".compute_at(" + g_out.name() +
-                         ", " + tile_inner_var.name() + ");\n";
+                sched.push_schedule(mem_handle.name(), mem.stage_num,
+                                    "compute_at(" + g_out.name() + ", " + tile_inner_var.name() + ")");
             } else {
                 user_warning << "Warning: Degenerate tiling. No dimensions are tiled" << '\n';
                 user_warning << "Computing \"" <<  mem.func.name() << "\" at root" << '\n';
                 Func(mem.func).compute_root();
-                sched += mem_handle.name() + ".compute_root();\n";
-                internal_assert(false);
+                sched.push_schedule(mem_handle.name(), mem.stage_num, "compute_root()");
             }
         }
 
         // Reorder the dimensions for better spatial locality
         map<string, int64_t> mem_strides =
             analyze_spatial_locality(mem, group_storage_bounds, inlines);
-        reorder_dims(mem_handle, mem_def, mem_strides, sched);
+        reorder_dims(mem_handle, mem.stage_num, mem_def, mem_strides, sched);
 
         vectorize_stage(g, mem_handle, mem.stage_num, mem_def, mem.func, false,
                         t, mem_rvars, mem_estimates, sched);
     }
-
-    return sched;
 }
 
-string Partitioner::generate_cpu_schedule(const Target &t) {
-    string sched = "";
-
+void Partitioner::generate_cpu_schedule(const Target &t, AutoSchedule &sched) {
     // Grab the group bounds early as they rely on the dimensions of the group
     // outputs which will be altered by modifying schedules.
     map<FStage, map<FStage, DimBounds>> loop_bounds = group_loop_bounds();
@@ -2517,24 +2576,20 @@ string Partitioner::generate_cpu_schedule(const Target &t) {
             inlines.insert(inline_func);
         }
     }
-    for (const auto &inline_func : inlines) {
-        Function f = get_element(dep_analysis.env, inline_func);
-        Func f_handle(f);
-        // TODO: Inlining functions with update definitions has different
-        // behavior than pure functions. They may need to be computed above
-        // the innermost vector loop to avoid complications with varying
-        // extents across different vector lanes.
-        f_handle.compute_inline();
-        sched += f_handle.name() + ".compute_inline()" + ";\n";
-    }
+
+    // TODO: Inlining functions with update definitions has different
+    // behavior than pure functions. They may need to be computed above
+    // the innermost vector loop to avoid complications with varying
+    // extents across different vector lanes.
+    //
+    // Since the default schedule is compute inline, we don't need to
+    // explicitly call compute_inline() on the function.
 
     // Realize schedule for each group in the pipeline.
     for (const auto &g : groups) {
-        sched += generate_group_cpu_schedule(g.second, t, get_element(loop_bounds, g.first),
-                                             get_element(storage_bounds, g.first), inlines);
+        generate_group_cpu_schedule(g.second, t, get_element(loop_bounds, g.first),
+                                    get_element(storage_bounds, g.first), inlines, sched);
     }
-
-    return sched;
 }
 
 int64_t Partitioner::find_max_access_stride(const Scope<int> &vars,
@@ -2742,7 +2797,6 @@ void validate_no_partial_schedules(const Function &f) {
  * the schedules. The target architecture is specified by 'target'. */
 string generate_schedules(const vector<Function> &outputs, const Target &target,
                           const MachineParams &arch_params) {
-    string sched;
     // Make an environment map which is used throughout the auto scheduling process.
     map<string, Function> env;
     for (Function f : outputs) {
@@ -2769,7 +2823,7 @@ string generate_schedules(const vector<Function> &outputs, const Target &target,
 
         // Compute all the pipeline stages at root and store them at root.
         set_schedule_defaults(env);
-        return sched;
+        return "";
     }
 
     DependenceAnalysis dep_analysis(env, func_val_bounds);
@@ -2820,13 +2874,19 @@ string generate_schedules(const vector<Function> &outputs, const Target &target,
     part.disp_grouping();
     part.disp_pipeline_graph();
 
-    sched = part.generate_cpu_schedule(target);
+    AutoSchedule sched;
+    part.generate_cpu_schedule(target, sched);
+
+    std::ostringstream oss;
+    oss << sched;
+    string sched_string = oss.str();
+    std::replace(sched_string.begin(), sched_string.end(), '$', '_');
 
     // TODO: Unify both inlining and grouping for fast mem
     // TODO: GPU scheduling
     // TODO: Hierarchical tiling
 
-    return sched;
+    return sched_string;
 }
 
 }

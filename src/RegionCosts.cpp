@@ -610,8 +610,8 @@ void RegionCosts::disp_func_costs() {
             for (const auto &e : def.values()) {
                 debug(3) << simplify(e) << '\n';
             }
-            debug(3) << "(" << kv.first << ", " << stage << ")" <<
-                     " -> (" << cost.arith << ", " << cost.memory << ")" << '\n';
+            debug(3) << "(" << kv.first << ", " << stage << ") -> ("
+                     << cost.arith << ", " << cost.memory << ")" << '\n';
             stage++;
         }
     }
