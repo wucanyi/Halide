@@ -19,7 +19,6 @@ namespace Internal {
 
 typedef std::map<std::string, Interval> DimBounds;
 
-const int debug_level = 3;
 const int64_t unknown = std::numeric_limits<int64_t>::min();
 
 /** Visitor for keeping track of functions that are directly called and the
@@ -77,7 +76,7 @@ int64_t get_extent(const Interval &i);
 int64_t box_size(const Box &b);
 
 /** Helper function to print the bounds of a region. */
-void disp_regions(const std::map<std::string, Box> &regions, int dlevel = debug_level);
+void disp_regions(const std::map<std::string, Box> &regions);
 
 /** Return the corresponding definition of a function given the stage. */
 Definition get_stage_definition(const Function &f, int stage_num);

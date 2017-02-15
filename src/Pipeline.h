@@ -9,6 +9,7 @@
 
 #include <vector>
 
+#include "AutoSchedule.h"
 #include "IntrusivePtr.h"
 #include "JITModule.h"
 #include "Module.h"
@@ -80,7 +81,7 @@ public:
 
     /** Generate a schedule for the pipeline. */
     EXPORT std::string auto_schedule(const Target &target,
-                                     const MachineParams &arch_params);
+                                     const Internal::MachineParams &arch_params);
 
     EXPORT std::string auto_schedule(const Target &target);
 

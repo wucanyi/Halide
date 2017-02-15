@@ -13,6 +13,15 @@ namespace Halide {
 
 namespace Internal {
 
+struct MachineParams {
+    uint32_t parallelism;
+    uint32_t vec_len;
+    uint32_t last_level_cache_size;
+    /** 'balance' indicates how much more expensive is the cost of a load
+     * compared the cost of an arithmetic operation at last level of cache. */
+    uint32_t balance;
+};
+
 /** Generate schedules for Funcs within a pipeline. The Funcs should not already
  * have specializations or schedules as the current auto-scheduler does not take
  * into account user-defined schedules or specializations. This applies the

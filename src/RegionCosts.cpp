@@ -2,6 +2,7 @@
 #include "IRVisitor.h"
 #include "IRMutator.h"
 #include "FindCalls.h"
+#include "PartitionLoops.h"
 #include "RealizationOrder.h"
 #include "Simplify.h"
 
@@ -282,26 +283,6 @@ Cost RegionCosts::region_cost(const map<string, Box> &regions, const set<string>
 }
 
 namespace {
-
-// Check if an expression or statement uses a likely tag
-class HasLikelyTag : public IRVisitor {
-    using IRVisitor::visit;
-    void visit(const Call *op) {
-        if (op->is_intrinsic(Call::likely)) {
-            result = true;
-        } else {
-            IRVisitor::visit(op);
-        }
-    }
-public:
-    bool result = false;
-};
-
-bool has_likely_tag(Expr e) {
-    HasLikelyTag h;
-    e.accept(&h);
-    return h.result;
-}
 
 /** Helper class that only accounts for the likely portion of the expression in
  * the case of max, min, and select. This will help costing functions with
@@ -619,22 +600,22 @@ int64_t RegionCosts::input_region_size(const map<string, Box> &input_regions) {
 }
 
 void RegionCosts::disp_func_costs() {
-    debug(debug_level) << "===========================" << '\n';
-    debug(debug_level) << "Pipeline per element costs:" << '\n';
-    debug(debug_level) << "===========================" << '\n';
+    debug(3) << "===========================" << '\n';
+    debug(3) << "Pipeline per element costs:" << '\n';
+    debug(3) << "===========================" << '\n';
     for (const auto &kv : env) {
         int stage = 0;
         for (const auto &cost : func_cost[kv.first]) {
             Definition def = get_stage_definition(kv.second, stage);
             for (const auto &e : def.values()) {
-                debug(debug_level) << simplify(e) << '\n';
+                debug(3) << simplify(e) << '\n';
             }
-            debug(debug_level) << "(" << kv.first << ", " << stage << ")" <<
+            debug(3) << "(" << kv.first << ", " << stage << ")" <<
                      " -> (" << cost.arith << ", " << cost.memory << ")" << '\n';
             stage++;
         }
     }
-    debug(debug_level) << "===========================" << '\n';
+    debug(3) << "===========================" << '\n';
 }
 
 }

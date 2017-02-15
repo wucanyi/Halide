@@ -105,12 +105,6 @@ public:
     bool result = false;
 };
 
-bool has_likely_tag(Expr e) {
-    HasLikelyTag h;
-    e.accept(&h);
-    return h.result;
-}
-
 // The goal of loop partitioning is to split loops up into a prologue,
 // a clean steady state, and an epilogue. The next visitor
 // (FindSimplifications) finds a list of simplifications that can be
@@ -980,6 +974,12 @@ class LowerLikelyIfInnermost : public IRMutator {
     }
 };
 
+}
+
+bool has_likely_tag(Expr e) {
+    HasLikelyTag h;
+    e.accept(&h);
+    return h.result;
 }
 
 Stmt partition_loops(Stmt s) {

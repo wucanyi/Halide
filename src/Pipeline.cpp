@@ -9,7 +9,6 @@
 #include "Lower.h"
 #include "Outputs.h"
 #include "PrintLoopNest.h"
-#include "AutoSchedule.h"
 
 using namespace Halide::Internal;
 

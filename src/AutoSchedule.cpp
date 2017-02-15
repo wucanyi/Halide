@@ -896,46 +896,46 @@ struct Partitioner {
 
     /** Helper function to display partition information of the pipeline. */
     // @{
-    void disp_pipeline_costs(int dlevel);
-    void disp_pipeline_bounds(int dlevel);
-    void disp_pipeline_graph(int dlevel);
-    void disp_grouping(int dlevel);
+    void disp_pipeline_costs();
+    void disp_pipeline_bounds();
+    void disp_pipeline_graph();
+    void disp_grouping();
     // @}
 };
 
-void Partitioner::disp_grouping(int dlevel = debug_level) {
-    debug(dlevel) << "\n=========" << '\n';
-    debug(dlevel) << "Grouping:" << '\n';
-    debug(dlevel) << "=========" << '\n';
+void Partitioner::disp_grouping() {
+    debug(3) << "\n=========" << '\n';
+    debug(3) << "Grouping:" << '\n';
+    debug(3) << "=========" << '\n';
     for (const auto &g : groups) {
-        debug(dlevel) << g.second << '\n';
+        debug(3) << g.second << '\n';
     }
-    debug(dlevel) << "=========" << '\n';
+    debug(3) << "=========" << '\n';
 }
 
-void Partitioner::disp_pipeline_graph(int dlevel = debug_level) {
-    debug(dlevel) << "\n================" << '\n';
-    debug(dlevel) << "Pipeline graph:" << '\n';
-    debug(dlevel) << "================" << '\n';
+void Partitioner::disp_pipeline_graph() {
+    debug(3) << "\n================" << '\n';
+    debug(3) << "Pipeline graph:" << '\n';
+    debug(3) << "================" << '\n';
     for (const auto &f : children) {
-        debug(dlevel) << f.first << ": {";
+        debug(3) << f.first << ": {";
         for (auto iter = f.second.begin(); iter != f.second.end(); ++iter) {
             if (std::distance(f.second.begin(), iter) > 0) {
-                debug(dlevel) << ", ";
+                debug(3) << ", ";
             }
-            debug(dlevel) << *iter;
+            debug(3) << *iter;
         }
-        debug(dlevel) << "}" << '\n';
+        debug(3) << "}" << '\n';
     }
-    debug(dlevel) << "================" << '\n';
+    debug(3) << "================" << '\n';
 }
 
-void Partitioner::disp_pipeline_bounds(int dlevel = debug_level) {
-    debug(dlevel) << "\n================" << '\n';
-    debug(dlevel) << "Pipeline bounds:" << '\n';
-    debug(dlevel) << "================" << '\n';
-    disp_regions(pipeline_bounds, dlevel);
-    debug(dlevel) << "===============" << '\n';
+void Partitioner::disp_pipeline_bounds() {
+    debug(3) << "\n================" << '\n';
+    debug(3) << "Pipeline bounds:" << '\n';
+    debug(3) << "================" << '\n';
+    disp_regions(pipeline_bounds);
+    debug(3) << "===============" << '\n';
 }
 
 Cost Partitioner::get_pipeline_cost() {
@@ -950,25 +950,25 @@ Cost Partitioner::get_pipeline_cost() {
     return total_cost;
 }
 
-void Partitioner::disp_pipeline_costs(int dlevel = debug_level) {
+void Partitioner::disp_pipeline_costs() {
     internal_assert(!group_costs.empty());
     Cost total_cost(0, 0);
-    debug(dlevel) << "\n===============" << '\n';
-    debug(dlevel) << "Pipeline costs:" << '\n';
-    debug(dlevel) << "===============" << '\n';
-    debug(dlevel) << "Group: (name) [arith cost, mem cost, parallelism]" << '\n';
+    debug(3) << "\n===============" << '\n';
+    debug(3) << "Pipeline costs:" << '\n';
+    debug(3) << "===============" << '\n';
+    debug(3) << "Group: (name) [arith cost, mem cost, parallelism]" << '\n';
     for (const pair<FStage, Group> &g : groups) {
         const GroupAnalysis &analysis = get_element(group_costs, g.first);
         total_cost.arith += analysis.cost.arith;
         total_cost.memory += analysis.cost.memory;
 
-        debug(dlevel) << "Group: " << g.first << " [";
-        debug(dlevel) << analysis.cost.arith << ", " << analysis.cost.memory
+        debug(3) << "Group: " << g.first << " [";
+        debug(3) << analysis.cost.arith << ", " << analysis.cost.memory
                       << ", " << analysis.parallelism << "]\n";
     }
-    debug(dlevel) << "Total arithmetic cost: " << total_cost.arith << '\n';
-    debug(dlevel) << "Total memory cost: " << total_cost.memory << '\n';
-    debug(dlevel) << "===============" << '\n';
+    debug(3) << "Total arithmetic cost: " << total_cost.arith << '\n';
+    debug(3) << "Total memory cost: " << total_cost.memory << '\n';
+    debug(3) << "===============" << '\n';
 }
 
 /** Construct a partitioner and build the pipeline graph on which the grouping
@@ -1113,11 +1113,11 @@ Partitioner::choose_candidate_grouping(const vector<pair<string, string>> &cands
         bool no_redundant_work = false;
         int64_t overall_benefit = estimate_benefit(grouping, no_redundant_work, true);
 
-        debug(debug_level) << "Candidate grouping:\n";
+        debug(3) << "Candidate grouping:\n";
         for (const auto &g : grouping) {
-            debug(debug_level) << "  " << g.first;
+            debug(3) << "  " << g.first;
         }
-        debug(debug_level) << "Candidate benefit: " << overall_benefit << '\n';
+        debug(3) << "Candidate benefit: " << overall_benefit << '\n';
         // TODO: The grouping process can be non-deterministic when the costs
         // of two choices are equal
         if (best_benefit < overall_benefit) {
@@ -1126,12 +1126,12 @@ Partitioner::choose_candidate_grouping(const vector<pair<string, string>> &cands
         }
     }
 
-    debug(debug_level) << "\nBest grouping:\n";
+    debug(3) << "\nBest grouping:\n";
     for (const auto &g : best_grouping) {
-        debug(debug_level) << "  " << g.first;
+        debug(3) << "  " << g.first;
     }
     if (best_grouping.size() > 0) {
-        debug(debug_level) << "Best benefit: " << best_benefit << '\n';
+        debug(3) << "Best benefit: " << best_benefit << '\n';
     }
 
     return best_grouping;
@@ -1263,10 +1263,10 @@ Partitioner::find_best_tile_config(const Group &g) {
                                            no_redundant_work, true);
 
         if (show_analysis) {
-            debug(debug_level) << "Benefit relative to not tiling:" << benefit << '\n';
-            debug(debug_level) << "Best analysis:" << new_analysis;
-            debug(debug_level) << "No tile analysis:" << no_tile_analysis;
-            debug(debug_level)
+            debug(3) << "Benefit relative to not tiling:" << benefit << '\n';
+            debug(3) << "Best analysis:" << new_analysis;
+            debug(3) << "No tile analysis:" << no_tile_analysis;
+            debug(3)
                 << "arith cost:" << (float)new_analysis.cost.arith / no_tile_analysis.cost.arith
                 << ", mem cost:" << (float)new_analysis.cost.memory / no_tile_analysis.cost.memory << '\n';
         }
@@ -1278,7 +1278,7 @@ Partitioner::find_best_tile_config(const Group &g) {
         }
     }
 
-    debug(debug_level) << "\nBest grouping:\n" << best_group << '\n';
+    debug(3) << "\nBest grouping:\n" << best_group << '\n';
 
     return make_pair(best_config, best_analysis);
 }
@@ -1335,14 +1335,14 @@ void Partitioner::group(Partitioner::Level level) {
             }
         }
 
-        debug(debug_level) << "\n============================" << '\n';
-        debug(debug_level) << "Current grouping candidates:" << '\n';
-        debug(debug_level) << "============================" << '\n';
+        debug(3) << "\n============================" << '\n';
+        debug(3) << "Current grouping candidates:" << '\n';
+        debug(3) << "============================" << '\n';
         for (size_t i = 0; i < cand.size(); ++i) {
             if (i > 0) {
-                debug(debug_level) << ", ";
+                debug(3) << ", ";
             }
-            debug(debug_level) << "{" << cand[i].first << ", " << cand[i].second << "}" << '\n';
+            debug(3) << "{" << cand[i].first << ", " << cand[i].second << "}" << '\n';
         }
 
         vector<pair<GroupingChoice, GroupConfig>> best = choose_candidate_grouping(cand, level);
@@ -1683,14 +1683,14 @@ Partitioner::GroupAnalysis Partitioner::analyze_group(const Group &g, bool show_
     }
 
     if (show_analysis) {
-        debug(debug_level) << "\nDetailed loads:\n";
+        debug(3) << "\nDetailed loads:\n";
         for (const auto &f_load : group_load_costs) {
-            debug(debug_level) << "(" << f_load.first << "," << f_load.second << ")";
+            debug(3) << "(" << f_load.first << "," << f_load.second << ")";
         }
-        debug(debug_level) << '\n';
+        debug(3) << '\n';
 
-        debug(debug_level) << "\nPer tile memory cost:" << per_tile_cost.memory << '\n';
-        debug(debug_level) << "Per tile arith cost:" << per_tile_cost.arith << '\n';
+        debug(3) << "\nPer tile memory cost:" << per_tile_cost.memory << '\n';
+        debug(3) << "Per tile arith cost:" << per_tile_cost.arith << '\n';
     }
 
     g_analysis.cost.memory = per_tile_cost.memory * estimate_tiles;
@@ -2276,10 +2276,10 @@ string Partitioner::generate_group_cpu_schedule(
     string out_f_name = g.output.func.name();
     Function g_out = g.output.func;
 
-    debug(debug_level) << "\n================\n";
-    debug(debug_level) << "Scheduling group:\n";
-    debug(debug_level) << "================\n";
-    debug(debug_level) << g;
+    debug(3) << "\n================\n";
+    debug(3) << "Scheduling group:\n";
+    debug(3) << "================\n";
+    debug(3) << g;
 
     // Get the definition corresponding to the stage
     Definition def = get_stage_definition(g_out, g.output.stage_num);

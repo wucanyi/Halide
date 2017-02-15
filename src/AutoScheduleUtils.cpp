@@ -157,11 +157,11 @@ set<string> get_parents(Function f, int stage) {
     return parents;
 }
 
-void disp_regions(const map<string, Box> &regions, int dlevel) {
+void disp_regions(const map<string, Box> &regions) {
     for (const auto &reg : regions) {
-        debug(dlevel) << reg.first << " -> ";
-        debug(dlevel) << reg.second;
-        debug(dlevel) << "\n";
+        debug(3) << reg.first << " -> ";
+        debug(3) << reg.second;
+        debug(3) << "\n";
     }
 }
 

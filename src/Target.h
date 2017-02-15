@@ -17,15 +17,6 @@
 
 namespace Halide {
 
-struct MachineParams {
-    uint32_t parallelism;
-    uint32_t vec_len;
-    uint32_t last_level_cache_size;
-    /** 'balance' indicates how much more expensive is the cost of a load
-     * compared the cost of an arithmetic operation at last level of cache. */
-    uint32_t balance;
-};
-
 /** A struct representing a target machine and os to generate code for. */
 struct Target {
     /** The operating system used by the target. Determines which
