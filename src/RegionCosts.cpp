@@ -16,7 +16,7 @@ using std::vector;
 
 namespace {
 
-/** Visitor for keeping track of all input images accessed and their types. */
+// Visitor for keeping track of all input images accessed and their types.
 class FindImageInputs : public IRVisitor {
     using IRVisitor::visit;
 
@@ -32,7 +32,7 @@ public:
     map<string, Type> input_type;
 };
 
-/** Visitor for tracking the arithmetic and memory costs. */
+// Visitor for tracking the arithmetic and memory costs.
 class ExprCost : public IRVisitor {
     using IRVisitor::visit;
 
@@ -96,9 +96,8 @@ class ExprCost : public IRVisitor {
             detailed_byte_loads[call->name] += call->type.bytes();
         } else if (call->call_type == Call::Extern || call->call_type == Call::PureExtern ||
                    call->call_type == Call::ExternCPlusPlus) {
-            // TODO: Suffix based matching is kind of sketchy; but going ahead
-            // with it for now. Also not all the PureExtern's are accounted for
-            // yet.
+            // TODO: Suffix based matching is kind of sketchy; but going ahead with
+            // it for now. Also not all the PureExtern's are accounted for yet.
             if (ends_with(call->name, "_f64")) {
                 cost.arith += 20;
             } else if (ends_with(call->name, "_f32")) {
@@ -112,6 +111,9 @@ class ExprCost : public IRVisitor {
                 user_warning << "Unknown extern call " << call->name << '\n';
             }
         } else if (call->call_type == Call::Intrinsic || call->call_type == Call::PureIntrinsic) {
+            // TODO: Improve the cost model. In some architectures (e.g. ARM or
+            // NEON), count_leading_zeros should be as cheap as bitwise ops.
+            // div_round_to_zero and mod_round_to_zero can also get fairly expensive.
             if (call->is_intrinsic(Call::reinterpret) || call->is_intrinsic(Call::bitwise_and) ||
                     call->is_intrinsic(Call::bitwise_not) || call->is_intrinsic(Call::bitwise_xor) ||
                     call->is_intrinsic(Call::bitwise_or) || call->is_intrinsic(Call::shift_left) ||
@@ -171,8 +173,8 @@ public:
     ExprCost() : cost(Cost(0, 0)) {}
 };
 
-/** Return the number of bytes required to store a single value of the
- * function. */
+// Return the number of bytes required to store a single value of the
+// function.
 int64_t get_func_value_size(const Function &f) {
     int64_t size = 0;
     const vector<Type> &types = f.output_types();
@@ -182,6 +184,52 @@ int64_t get_func_value_size(const Function &f) {
     internal_assert(!types.empty());
     return size;
 }
+
+// Helper class that only accounts for the likely portion of the expression in
+// the case of max, min, and select. This will help costing functions with
+// boundary conditions better. The likely intrinsic triggers loop partitioning
+// and on average (steady stage) the cost of the expression will be equivalent
+// to the likely portion.
+//
+// TODO: Comment this out for now until we modify the compute cost functions
+// to account for likely exprs.
+/*class LikelyExpression : public IRMutator {
+    using IRMutator::mutate;
+    using IRMutator::visit;
+
+    void visit(const Min *op) {
+        IRVisitor::visit(op);
+        bool likely_a = has_likely_tag(op->a);
+        bool likely_b = has_likely_tag(op->b);
+        if (likely_a && !likely_b) {
+            expr = op->a;
+        } else if (likely_b && !likely_a) {
+            expr = op->a;
+        }
+    }
+
+    void visit(const Max *op) {
+        IRVisitor::visit(op);
+        bool likely_a = has_likely_tag(op->a);
+        bool likely_b = has_likely_tag(op->b);
+        if (likely_a && !likely_b) {
+            expr = op->a;
+        } else if (likely_b && !likely_a) {
+            expr = op->b;
+        }
+    }
+
+    void visit(const Select *op) {
+        IRVisitor::visit(op);
+        bool likely_t = has_likely_tag(op->true_value);
+        bool likely_f = has_likely_tag(op->false_value);
+        if (likely_t && !likely_f) {
+            expr = op->true_value;
+        } else if (likely_f && !likely_t) {
+            expr = op->false_value;
+        }
+    }
+};*/
 
 } // anonymous namespace
 
@@ -281,53 +329,6 @@ Cost RegionCosts::region_cost(const map<string, Box> &regions, const set<string>
     internal_assert((total_cost.arith != unknown) && (total_cost.memory != unknown));
     return total_cost;
 }
-
-namespace {
-
-/** Helper class that only accounts for the likely portion of the expression in
- * the case of max, min, and select. This will help costing functions with
- * boundary conditions better. The likely intrinsic triggers loop partitioning
- * and on average (steady stage) the cost of the expression will be equivalent
- * to the likely portion. */
-class LikelyExpression : public IRMutator {
-    using IRMutator::mutate;
-    using IRMutator::visit;
-
-    void visit(const Min *op) {
-        IRVisitor::visit(op);
-        bool likely_a = has_likely_tag(op->a);
-        bool likely_b = has_likely_tag(op->b);
-        if (likely_a && !likely_b) {
-            expr = op->a;
-        } else if (likely_b && !likely_a) {
-            expr = op->a;
-        }
-    }
-
-    void visit(const Max *op) {
-        IRVisitor::visit(op);
-        bool likely_a = has_likely_tag(op->a);
-        bool likely_b = has_likely_tag(op->b);
-        if (likely_a && !likely_b) {
-            expr = op->a;
-        } else if (likely_b && !likely_a) {
-            expr = op->b;
-        }
-    }
-
-    void visit(const Select *op) {
-        IRVisitor::visit(op);
-        bool likely_t = has_likely_tag(op->true_value);
-        bool likely_f = has_likely_tag(op->false_value);
-        if (likely_t && !likely_f) {
-            expr = op->true_value;
-        } else if (likely_f && !likely_t) {
-            expr = op->false_value;
-        }
-    }
-};
-
-} // anonymous namespace
 
 map<string, int64_t>
 RegionCosts::stage_detailed_load_costs(string func, int stage,
@@ -600,22 +601,22 @@ int64_t RegionCosts::input_region_size(const map<string, Box> &input_regions) {
 }
 
 void RegionCosts::disp_func_costs() {
-    debug(3) << "===========================" << '\n';
-    debug(3) << "Pipeline per element costs:" << '\n';
-    debug(3) << "===========================" << '\n';
+    debug(0) << "===========================" << '\n';
+    debug(0) << "Pipeline per element costs:" << '\n';
+    debug(0) << "===========================" << '\n';
     for (const auto &kv : env) {
         int stage = 0;
         for (const auto &cost : func_cost[kv.first]) {
             Definition def = get_stage_definition(kv.second, stage);
             for (const auto &e : def.values()) {
-                debug(3) << simplify(e) << '\n';
+                debug(0) << simplify(e) << '\n';
             }
-            debug(3) << "(" << kv.first << ", " << stage << ") -> ("
+            debug(0) << "(" << kv.first << ", " << stage << ") -> ("
                      << cost.arith << ", " << cost.memory << ")" << '\n';
             stage++;
         }
     }
-    debug(3) << "===========================" << '\n';
+    debug(0) << "===========================" << '\n';
 }
 
 }

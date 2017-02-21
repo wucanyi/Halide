@@ -24,8 +24,7 @@ using std::make_pair;
 
 namespace {
 
-/** Helper function to simplify the upper and lower bounds
- * of each dimension of a box.*/
+// Helper function to simplify the upper and lower bounds of each dimension of a box.
 void simplify_box(Box &b) {
     for (size_t i = 0; i < b.size(); i++) {
         b[i].min = simplify(b[i].min);
@@ -33,9 +32,8 @@ void simplify_box(Box &b) {
     }
 }
 
-/** Helper function to merge the partial region map into the result
- * region map. */
-void merge_regions(map<string, Box> &result, map<string, Box> &partial) {
+// Helper function to merge the partial region map into the result region map.
+void merge_regions(map<string, Box> &result, const map<string, Box> &partial) {
     // Merge regions from 'partial' with an existing region in 'result'.
     for (const auto &reg : partial) {
         auto iter = result.find(reg.first);
@@ -47,7 +45,7 @@ void merge_regions(map<string, Box> &result, map<string, Box> &partial) {
     }
 }
 
-/** Representation of a function stage in the pipeline. */
+// Representation of a function stage in the pipeline.
 struct FStage {
     Function func;
     uint32_t stage_num;
@@ -74,8 +72,8 @@ struct FStage {
     }
 };
 
-/** Helper function to set the compute and store level of all function
- * stages in the environment as root. */
+// Helper function to set the compute and store level of all function
+// stages in the environment as root.
 void set_schedule_defaults(map<string, Function> &env) {
     for (auto &kv : env) {
         kv.second.schedule().store_level() = LoopLevel::root();
@@ -89,8 +87,8 @@ void set_schedule_defaults(map<string, Function> &env) {
     }
 }
 
-/** Return true if all the pipeline outputs have estimates specified
- * on each of their dimensions. */
+// Return true if all the pipeline outputs have estimates specified
+// on each of their dimensions.
 bool check_estimates_on_outputs(const vector<Function> &outputs) {
     bool estimates_avail = true;
     for (const auto &out : outputs) {
@@ -117,56 +115,52 @@ struct DependenceAnalysis {
     const map<string, Function> &env;
     const FuncValueBounds &func_val_bounds;
 
-    /** TODO: Auto scheduling for large benchmarks is bottlenecked by the bound inference.
-     * Bound queries with the same parameters are common during the grouping process;
-     * it might be beneficial to build a cache for bounds queries. */
+    // TODO: Auto scheduling for large benchmarks is bottlenecked by the bound inference.
+    // Bound queries with the same parameters are common during the grouping process;
+    // it might be beneficial to build a cache for bounds queries.
 
     DependenceAnalysis(const map<string, Function> &env, const FuncValueBounds &func_val_bounds)
         : env(env), func_val_bounds(func_val_bounds) {}
 
-    /** Return the regions of the producers ('prods') required to compute the region
-     * of the function stage ('f', 'stage_num') specified by 'bounds'. When
-     * 'only_regions_computed' is set to true, this only returns the computed
-     * regions and not the total allocated regions.
-     */
+    // Return the regions of the producers ('prods') required to compute the region
+    // of the function stage ('f', 'stage_num') specified by 'bounds'. When
+    // 'only_regions_computed' is set to true, this only returns the computed
+    // regions and not the total allocated regions.
     map<string, Box> regions_required(Function f, int stage_num,
                                       const DimBounds &bounds,
                                       const set<string> &prods,
                                       bool only_regions_computed);
 
-    /** Return the regions of the producers ('prods') required to compute the region
-     * of the function specified by 'pure_bounds'. When 'only_regions_computed'
-     * is set to true, this only returns the computed regions and not the total
-     * allocated regions.
-     */
+    // Return the regions of the producers ('prods') required to compute the region
+    // of the function specified by 'pure_bounds'. When 'only_regions_computed'
+    // is set to true, this only returns the computed regions and not the total
+    // allocated regions.
     map<string, Box> regions_required(Function f,
                                       const DimBounds &pure_bounds,
                                       const set<string> &prods,
                                       bool only_regions_computed);
 
-    /** Return redundantly computed regions of producers ('prods') while computing
-     * a region of the function stage ('f', 'stage_num') specified by 'bounds'.
-     * 'var' is the dimension along which redundant computation is accounted for.
-     * When 'only_regions_computed' is set to true, this only returns the computed
-     * regions and not the total allocated regions. When 'only_regions_computed'
-     * is set to true, this only returns the computed regions and not the total
-     * allocated regions.
-     */
+    // Return redundantly computed regions of producers ('prods') while computing
+    // a region of the function stage ('f', 'stage_num') specified by 'bounds'.
+    // 'var' is the dimension along which redundant computation is accounted for.
+    // When 'only_regions_computed' is set to true, this only returns the computed
+    // regions and not the total allocated regions. When 'only_regions_computed'
+    // is set to true, this only returns the computed regions and not the total
+    // allocated regions.
     map<string, Box> redundant_regions(Function f, int stage_num, string var,
                                        const DimBounds &bounds,
                                        const set<string> &prods,
                                        bool only_regions_computed);
 
-    /** Return overlapping regions of producers ('prods') while computing a function
-     * stage along each of the dimensions.
-     */
+    // Return overlapping regions of producers ('prods') while computing a function
+    // stage along each of the dimensions.
     vector<map<string, Box>>
     overlap_regions(Function f, int stage_num, const DimBounds &bounds,
                     const set<string> &prods, bool only_regions_computed);
 };
 
-/** Return the regions of the producers ('prods') required to compute the region
- * of the function specified by 'pure_bounds'. */
+// Return the regions of the producers ('prods') required to compute the region
+// of the function specified by 'pure_bounds'.
 map<string, Box>
 DependenceAnalysis::regions_required(Function f, const DimBounds &pure_bounds,
                                      const set<string> &prods,
@@ -184,9 +178,9 @@ DependenceAnalysis::regions_required(Function f, const DimBounds &pure_bounds,
     return regions;
 }
 
-/** Helper function to queue regions that need to be traversed.
- * 'f_queue' is the queue into which the regions specified by
- * 'prod_func' and 'region' will be added. */
+// Helper function to queue regions that need to be traversed. 'f_queue' is
+// the queue into which the regions specified by 'prod_func' and 'region'
+// will be added.
 void queue_func_regions(deque<pair<FStage, DimBounds>> &f_queue,
                         const Function &prod_func, const Box &region) {
     DimBounds prod_pure_bounds;
@@ -215,9 +209,9 @@ void queue_func_regions(deque<pair<FStage, DimBounds>> &f_queue,
     }
 }
 
-/** Helper function for merging 'curr_regions' to the global map of regions
- * and adding them to the queue of regions that need to be traversed.
- * 'prods' is the set of producer functions that are under consideration. */
+// Helper function for merging 'curr_regions' to the global map of regions
+// and adding them to the queue of regions that need to be traversed.
+// 'prods' is the set of producer functions that are under consideration.
 void merge_and_queue_regions(deque<pair<FStage, DimBounds>> &f_queue,
                              map<string, Box> &regions,
                              map<string, Box> &curr_regions,
@@ -253,8 +247,8 @@ void merge_and_queue_regions(deque<pair<FStage, DimBounds>> &f_queue,
     }
 }
 
-/** Return the regions of the producers ('prods') required to compute the region
- * of the function stage ('f', 'stage_num') specified by 'bounds'. */
+// Return the regions of the producers ('prods') required to compute the region
+// of the function stage ('f', 'stage_num') specified by 'bounds'.
 map<string, Box>
 DependenceAnalysis::regions_required(Function f, int stage_num,
                                      const DimBounds &bounds,
@@ -430,9 +424,9 @@ DependenceAnalysis::regions_required(Function f, int stage_num,
     return concrete_regions;
 }
 
-/** Return redundantly computed regions of producers ('prods') while computing a
- * region of the function stage ('f', 'stage_num') specified by 'bounds'. 'var'
- * is the dimension along which redundant computation is accounted for. */
+// Return redundantly computed regions of producers ('prods') while computing a
+// region of the function stage ('f', 'stage_num') specified by 'bounds'. 'var'
+// is the dimension along which redundant computation is accounted for.
 map<string, Box>
 DependenceAnalysis::redundant_regions(Function f, int stage_num, string var,
                                       const DimBounds &bounds,
@@ -496,8 +490,8 @@ DependenceAnalysis::redundant_regions(Function f, int stage_num, string var,
     return overlaps;
 }
 
-/** Return overlapping regions of producers ('prods') while computing a function
- * stage along each of the dimensions. */
+// Return overlapping regions of producers ('prods') while computing a function
+// stage along each of the dimensions.
 vector<map<string, Box>>
 DependenceAnalysis::overlap_regions(Function f, int stage_num,
                                     const DimBounds &bounds,
@@ -517,8 +511,8 @@ DependenceAnalysis::overlap_regions(Function f, int stage_num,
     return conc_overlaps;
 }
 
-/** Return the regions of each function required for computing the
- * outputs of the pipeline. */
+// Return the regions of each function required for computing the
+// outputs of the pipeline.
 map<string, Box> get_pipeline_bounds(DependenceAnalysis &analysis,
                                      const vector<Function> &outputs) {
     map<string, Box> pipeline_bounds;
@@ -565,14 +559,14 @@ map<string, Box> get_pipeline_bounds(DependenceAnalysis &analysis,
 }
 
 struct AutoSchedule {
-    /** Cache for storing all internal vars/rvars that have been declared during
-     * the course of schedule generation, to ensure that we don't introduce any
-     * duplicates in the string representation of the schedules. */
+    // Cache for storing all internal vars/rvars that have been declared during
+    // the course of schedule generation, to ensure that we don't introduce any
+    // duplicates in the string representation of the schedules.
     map<string, VarOrRVar> vars_declared;
 
-    /** Store the list of schedules applied to some function stages (most recent
-     * schedule is placed last in the list). The map is indexed by the string
-     * representation of a function stage, e.g. f, f.update(0), etc. */
+    // Store the list of schedules applied to some function stages (most recent
+    // schedule is placed last in the list). The map is indexed by the string
+    // representation of a function stage, e.g. f, f.update(0), etc.
     map<string, vector<string>> func_schedules;
 
     friend std::ostream& operator<<(std::ostream &stream, const AutoSchedule &sched) {
@@ -616,10 +610,10 @@ struct AutoSchedule {
     }
 };
 
-/** Implement the grouping algorithm and the cost model for making the grouping
- * choices. */
+// Implement the grouping algorithm and the cost model for making the grouping
+// choices.
 struct Partitioner {
-    /** GroupingChoice encodes the grouping of the 'prod' function into the 'cons' stage. */
+    // GroupingChoice encodes the grouping of the 'prod' function into the 'cons' stage.
     struct GroupingChoice {
         string prod;
         FStage cons;
@@ -640,50 +634,54 @@ struct Partitioner {
         }
     };
 
-    /** A group is a sub-pipeline with a single output. Members of a group are
-     * either inlined into the consumer functions within the group or computed
-     * at tiles of the output, specified by 'tile_sizes'.
-     *
-     * TODO: The restriction of computing either at the inline or tile level
-     * makes the space of scheduling choices for a group very tractable.
-     * However, the restriction might miss good schedules which can only be
-     * realized by computing the members of the group at different levels of
-     * the group.
-     *
-     * There are two approaches to extend the space of schedules considered:
-     * 1) Recursive grouping: Treat the problem of determining the compute levels
-     * within a group as a smaller instance of the grouping problem with
-     * different parameters for the input, output sizes, and cache model.
-     *
-     * 2) Tightening: Always compute a function at the lowest level possible
-     * without introducing redundant work. This is a restricted form of recursive
-     * grouping which does not explore the trade-off between redundant work and
-     * locality.
-     *
-     * Either approach can be implemented as a post process for each group
-     * after the initial grouping process finishes. The cost model may
-     * already make sub-optimal higher level partitioning when it is not aware
-     * of the benefits of the post processing. However, it should strictly be
-     * an improvement over the initial grouping. As a first step, it is good
-     * to make it a post process.
-     *
-     * Incorporating the recursive grouping process into the cost model can be
-     * tricky and can potentially make the cost of analyzing a group
-     * prohibitive, as it requires solving smaller instances of the grouping
-     * problem for analyzing each configuration. On the other hand, tightening
-     * can be integrated into the cost model with out significantly increasing
-     * the time to analyze a grouping configuration.
-     *
-     * TODO: Sliding window schedules can be implemented as a post-pass by
-     * moving the store level of all the members of the group to the outermost
-     * serial loop. It can be incorporated in the cost model with some effort.
-     *
-     * TODO: Register tiling is an important transformation especially for
-     * benchmarks with significant reuse of the data (like matrix multiply and
-     * convolutional layers). The mechanism for realizing register tiling is to
-     * completely unroll small tiles of the innermost kernels. Unrolling
-     * interacts with vectorization, storage layout, and depends on the outer
-     * level tiling. */
+    // A group is a sub-pipeline with a single output. Members of a group are
+    // either inlined into the consumer functions within the group or computed
+    // at tiles of the output, specified by 'tile_sizes'.
+    //
+    // TODO: The restriction of computing either at the inline or tile level
+    // makes the space of scheduling choices for a group very tractable.
+    // However, the restriction might miss good schedules which can only be
+    // realized by computing the members of the group at different levels of
+    // the group.
+    //
+    // There are two approaches to extend the space of schedules considered:
+    // 1) Recursive grouping: Treat the problem of determining the compute levels
+    // within a group as a smaller instance of the grouping problem with
+    // different parameters for the input, output sizes, and cache model.
+    //
+    // 2) Tightening: Always compute a function at the lowest level possible
+    // without introducing redundant work. This is a restricted form of recursive
+    // grouping which does not explore the trade-off between redundant work and
+    // locality.
+    //
+    // Either approach can be implemented as a post process for each group
+    // after the initial grouping process finishes. The cost model may
+    // already make sub-optimal higher level partitioning when it is not aware
+    // of the benefits of the post processing. However, it should strictly be
+    // an improvement over the initial grouping. As a first step, it is good
+    // to make it a post process.
+    //
+    // Incorporating the recursive grouping process into the cost model can be
+    // tricky and can potentially make the cost of analyzing a group
+    // prohibitive, as it requires solving smaller instances of the grouping
+    // problem for analyzing each configuration. On the other hand, tightening
+    // can be integrated into the cost model with out significantly increasing
+    // the time to analyze a grouping configuration.
+    //
+    // TODO: Add sliding window optimizations. For start, it may be enough to
+    // implement sliding window as a post-pass by moving the store level of all
+    // the members of the group to the outermost serial loop. This could possibly
+    // be incorporated in the cost model with some effort. Line-buffering
+    // presents additional challenges for this post-processing strategy though.
+    // A typical line-buffer would use terrible tile size for tiling, but its
+    // performance will improve significantly once sliding window is turned on.
+    //
+    // TODO: Register tiling is an important transformation especially for
+    // benchmarks with significant reuse of the data (like matrix multiply and
+    // convolutional layers). The mechanism for realizing register tiling is to
+    // completely unroll small tiles of the innermost kernels. Unrolling
+    // interacts with vectorization, storage layout, and depends on the outer
+    // level tiling.
     struct Group {
         // The output stage representing the group.
         FStage output;
@@ -730,7 +728,7 @@ struct Partitioner {
         }
     };
 
-    /** Result of the analysis of a group. */
+    // Result of the analysis of a group.
     struct GroupAnalysis {
         // Estimate of the arithmetic and memory cost for computing the group.
         Cost cost;
@@ -746,9 +744,9 @@ struct Partitioner {
         }
     };
 
-    /** Configuration of a group and the corresponding analysis. A group is the
-     * set of functions that are computed together in tiles and the group config
-     * specifies at what granularity they are computed together ('tile_sizes'). */
+    // Configuration of a group and the corresponding analysis. A group is the
+    // set of functions that are computed together in tiles and the group config
+    // specifies at what granularity they are computed together ('tile_sizes').
     struct GroupConfig {
         map<string, int> tile_sizes;
         GroupAnalysis analysis;
@@ -757,44 +755,44 @@ struct Partitioner {
         GroupConfig() : tile_sizes(map<string, int>()), analysis(GroupAnalysis()) {}
     };
 
-    /** Cache for storing the best configuration for the grouping choice. During
-     * the grouping process, the impact of grouping two groups together is only
-     * limited to the producers and consumers of the groups that are being grouped
-     * together. The best grouping choices for the rest of the pipeline need not be
-     * re-evaluated and caching them improves performance significantly. */
+    // Cache for storing the best configuration for the grouping choice. During
+    // the grouping process, the impact of grouping two groups together is only
+    // limited to the producers and consumers of the groups that are being grouped
+    // together. The best grouping choices for the rest of the pipeline need not be
+    // re-evaluated and caching them improves performance significantly.
     map<GroupingChoice, GroupConfig> grouping_cache;
 
-    /** Each group in the pipeline has a single output stage. A group is comprised
-     * of function stages that are computed together in tiles (stages of a function
-     * are always grouped together). 'groups' is the mapping from the output stage
-     * of the group to the group. */
+    // Each group in the pipeline has a single output stage. A group is comprised
+    // of function stages that are computed together in tiles (stages of a function
+    // are always grouped together). 'groups' is the mapping from the output stage
+    // of the group to the group.
     map<FStage, Group> groups;
-    /** The child stages of each stage (i.e. stages that depend on or use the values
-     * computed by a particular stage) in the pipeline. */
+    // The child stages of each stage (i.e. stages that depend on or use the values
+    // computed by a particular stage) in the pipeline.
     map<FStage, set<FStage>> children;
-    /** Map from the output stage of the group to the analysis of the group. The mapping
-     * needs to be updated whenever the grouping changes. */
+    // Map from the output stage of the group to the analysis of the group. The mapping
+    // needs to be updated whenever the grouping changes.
     map<FStage, GroupAnalysis> group_costs;
 
-    /** Levels that are targeted by the grouping algorithm. In the 'INLINE' mode, the grouping
-     * algorithm groups the functions by inlining the expression for the producer function
-     * into the consumer stage. In the 'FAST_MEM' mode, the grouping is done at the level of
-     * tiles of the group output stage. */
-    enum Level {INLINE, FAST_MEM};
+    // Levels that are targeted by the grouping algorithm. In the 'Inline' mode, the grouping
+    // algorithm groups the functions by inlining the expression for the producer function
+    // into the consumer stage. In the 'FastMem' mode, the grouping is done at the level of
+    // tiles of the group output stage.
+    enum class Level {Inline, FastMem};
 
-    /** Bounds of each function stage in the pipeline. These bounds are inferred from the
-     * estimates of the outputs and other functions in the pipeline. */
+    // Bounds of each function stage in the pipeline. These bounds are inferred from the
+    // estimates of the outputs and other functions in the pipeline.
     const map<string, Box> &pipeline_bounds;
-    /** Parameters of the machine model that is used for estimating the cost of each
-     * group in the pipeline. */
+    // Parameters of the machine model that is used for estimating the cost of each
+    // group in the pipeline.
     const MachineParams &arch_params;
-    /** Dependency analysis of the pipeline. This support queries on regions
-     * accessed and computed for producing some regions of some functions. */
+    // Dependency analysis of the pipeline. This support queries on regions
+    // accessed and computed for producing some regions of some functions.
     DependenceAnalysis &dep_analysis;
-    /** The arithmetic and memory costs of evaluating the expressions which define
-     * each function in the pipeline. */
+    // The arithmetic and memory costs of evaluating the expressions which define
+    // each function in the pipeline.
     RegionCosts &costs;
-    /** Output functions of the pipeline. */
+    // Output functions of the pipeline.
     const vector<Function> &outputs;
 
     Partitioner(const map<string, Box> &_pipeline_bounds, const MachineParams &_arch_params,
@@ -803,196 +801,182 @@ struct Partitioner {
 
     void initialize_groups();
 
-    /** Merge 'prod_group' into 'cons_group'. The output stage of 'cons_group'
-     * will be the output stage of the merged group.
-     */
+    // Merge 'prod_group' into 'cons_group'. The output stage of 'cons_group'
+    // will be the output stage of the merged group.
     Group merge_groups(const Group &prod_group, const Group &cons_group);
 
-    /** Merge 'prods' in 'choice' into 'cons'. Set the tile size of the new group
-     * to the one specified by 'eval'. If 'level' is set to INLINE, all members
-     * of 'prods' will be inlined in the new group.
-     */
+    // Merge 'prods' in 'choice' into 'cons'. Set the tile size of the new group
+    // to the one specified by 'eval'. If 'level' is set to Inline, all members
+    // of 'prods' will be inlined in the new group.
     void merge_groups(const GroupingChoice &choice, const GroupConfig &eval,
                       Partitioner::Level level);
 
-    /** Given a grouping 'g', compute the estimated cost (arithmetic + memory) and
-     * parallelism that can be potentially exploited when computing that group.
-     */
+    // Given a grouping 'g', compute the estimated cost (arithmetic + memory) and
+    // parallelism that can be potentially exploited when computing that group.
     GroupAnalysis analyze_group(const Group &g, bool show_analysis);
 
-    /** For each group in the partition, return the regions of the producers
-     * need to be allocated to compute a tile of the group's output.
-     */
+    // For each group in the partition, return the regions of the producers
+    // need to be allocated to compute a tile of the group's output.
     map<FStage, map<string, Box>> group_storage_bounds();
 
-    /** For each group in the partition, return the regions of the producers
-     * required to compute a tile of the group's output.
-     */
+    // For each group in the partition, return the regions of the producers
+    // required to compute a tile of the group's output.
     map<FStage, map<FStage, DimBounds>> group_loop_bounds();
 
-    /** Partition the pipeline by iteratively merging groups until a fixpoint is
-     * reached.
-     */
+    // Partition the pipeline by iteratively merging groups until a fixpoint is
+    // reached.
     void group(Partitioner::Level level);
 
-    /** Given a grouping choice, return a configuration for the group that gives
-     * the highest estimated benefits.
-     */
+    // Given a grouping choice, return a configuration for the group that gives
+    // the highest estimated benefits.
     GroupConfig evaluate_choice(const GroupingChoice &group, Partitioner::Level level);
 
-    /** Pick the best choice among all the grouping options currently available. Uses
-     * the cost model to estimate the benefit of each choice. This returns a vector of
-     * choice and configuration pairs which describe the best grouping choice.
-     */
+    // Pick the best choice among all the grouping options currently available. Uses
+    // the cost model to estimate the benefit of each choice. This returns a vector of
+    // choice and configuration pairs which describe the best grouping choice.
     vector<pair<GroupingChoice, GroupConfig>>
     choose_candidate_grouping(const vector<pair<string, string>> &cands,
                               Partitioner::Level level);
 
-    /** Return the bounds required to produce a function stage. */
+    // Return the bounds required to produce a function stage.
     DimBounds get_bounds(const FStage &stg);
 
-    /** Return the bounds required to produce a tile of a function stage. */
+    // Return the bounds required to produce a tile of a function stage.
     DimBounds get_bounds_from_tile_sizes(const FStage &stg,
                                          const map<string, int> &tile_sizes);
 
-    /** Return the estimated size of the bounds. */
+    // Return the estimated size of the bounds.
     map<string, int64_t> bounds_to_estimates(const DimBounds &bounds);
 
-    /** Given a function stage, return a vector of possible tile configurations for
-     * that function stage.
-     */
+    // Given a function stage, return a vector of possible tile configurations for
+    // that function stage.
     vector<map<string, int>> generate_tile_configs(const FStage &stg);
 
-    /** Find the best tiling configuration for a group 'g' among a set of tile
-     * configurations. This returns a pair of configuration with the highest
-     * estimated benefit and the estimated benefit. */
+    // Find the best tiling configuration for a group 'g' among a set of tile
+    // configurations. This returns a pair of configuration with the highest
+    // estimated benefit and the estimated benefit.
     pair<map<string, int>, GroupAnalysis> find_best_tile_config(const Group &g);
 
-    /** Estimate the benefit (arithmetic + memory) of 'new_grouping' over 'old_grouping'.
-     * Positive values indicates that 'new_grouping' may be preferrable over 'old_grouping'.
-     * When 'ensure_parallelism' is set to true, this will return an unknown cost
-     * if the estimated parallelism is smaller than the machine parameters.
-     * If 'no_redundant_work' is set, we only consider the arithmetic cost, i.e. if
-     * the arithmetic benefit is negative, we will treat it as no benefits and we
-     * should not perform the new grouping.
-     */
+    // Estimate the benefit (arithmetic + memory) of 'new_grouping' over 'old_grouping'.
+    // Positive values indicates that 'new_grouping' may be preferrable over 'old_grouping'.
+    // When 'ensure_parallelism' is set to true, this will return an unknown cost
+    // if the estimated parallelism is smaller than the machine parameters.
+    // If 'no_redundant_work' is set, we only consider the arithmetic cost, i.e. if
+    // the arithmetic benefit is negative, we will treat it as no benefits and we
+    // should not perform the new grouping.
     int64_t estimate_benefit(const GroupAnalysis &old_grouping, const GroupAnalysis &new_grouping,
                              bool no_redundant_work, bool ensure_parallelism);
 
-    /** Same as above; however, 'new_grouping' is a vector of function pairs that
-     * are to be grouped together.
-     */
+    // Same as above; however, 'new_grouping' is a vector of function pairs that
+    // are to be grouped together.
     int64_t estimate_benefit(const vector<pair<GroupingChoice, GroupConfig>> &new_grouping,
                              bool no_redundant_work, bool ensure_parallelism);
 
-    /** Return the total estimate on arithmetic and memory costs of computing all
-     * groups within the pipeline. */
+    // Return the total estimate on arithmetic and memory costs of computing all
+    // groups within the pipeline.
     Cost get_pipeline_cost();
 
-    /** Return the maximum access stride to allocation of 'func_acc' along any
-     * loop variable specified in 'vars'. Access expressions along each dimension
-     * of the allocation are specified by 'acc_exprs'. The dimension bounds of the
-     * allocation are specified by 'buffer_bounds'. */
+    // Return the maximum access stride to allocation of 'func_acc' along any
+    // loop variable specified in 'vars'. Access expressions along each dimension
+    // of the allocation are specified by 'acc_exprs'. The dimension bounds of the
+    // allocation are specified by 'buffer_bounds'.
     int64_t find_max_access_stride(const Scope<int> &vars, const string &func_acc,
                                    const vector<Expr> &acc_exprs, const Box &buffer_bounds);
 
-    /** Return the sum of access strides along each of the loop variables in
-     * a function stage. The bounds of all the allocations accessed are specified
-     * in 'allocation_bounds'.
-     */
+    // Return the sum of access strides along each of the loop variables in
+    // a function stage. The bounds of all the allocations accessed are specified
+    // in 'allocation_bounds'.
     map<string, int64_t> analyze_spatial_locality(
         const FStage &stg, const map<string, Box> &parent_bounds,
         const set<string> &inlines = set<string>());
 
     map<string, int64_t> evaluate_reuse(const FStage &stg, const set<string> &prods);
 
-    /** Generate and apply schedules for all functions within a pipeline by
-     * following their grouping structure.
-     *
-     * TODO: A mode where schedules are not applied to the functions might be
-     * interesting.
-     *
-     * TODO: The current form of the schedule returned is not very useful since it
-     * cannot be manipulated and introspected very easily. The problem is that all
-     * of the scheduling uses internal function and variable names which are not
-     * visible to the user. Additionally, functions like sum and maximum are not
-     * user visible. More thought needs to go into interaction between the user and
-     * auto scheduling. */
+    // Generate and apply schedules for all functions within a pipeline by
+    // following their grouping structure.
+    //
+    // TODO: A mode where schedules are not applied to the functions might be
+    // interesting.
+    //
+    // TODO: The current form of the schedule returned is not very useful since it
+    // cannot be manipulated and introspected very easily. The problem is that all
+    // of the scheduling uses internal function and variable names which are not
+    // visible to the user. Additionally, functions like sum and maximum are not
+    // user visible. More thought needs to go into interaction between the user and
+    // auto scheduling.
     void generate_cpu_schedule(const Target &t, AutoSchedule &sched);
 
-    /** Same as \ref Partitioner::generate_cpu_schedule, but this generates and
-     * applies schedules for a group of function stages.
-     */
+    // Same as \ref Partitioner::generate_cpu_schedule, but this generates and
+    // applies schedules for a group of function stages.
+
     void generate_group_cpu_schedule(const Group &g, const Target &t,
                                      const map<FStage, DimBounds> &group_loop_bounds,
                                      const map<string, Box> &group_storage_bounds,
                                      const set<string> &inlines,
                                      AutoSchedule &sched);
 
-    /** Split the dimension of stage 'f_handle' along 'v' into inner and outer
-     * dimensions. Modify 'estimates' according to the split and append the split
-     * schedule to 'sched'. */
+    // Split the dimension of stage 'f_handle' along 'v' into inner and outer
+    // dimensions. Modify 'estimates' according to the split and append the split
+    // schedule to 'sched'.
     pair<VarOrRVar, VarOrRVar> split_dim(
         const Group &g, Stage f_handle, int stage_num, Definition def,
         bool is_group_output, VarOrRVar v, int factor, string in_suffix,
         string out_suffix, map<string, int64_t> &estimates, AutoSchedule &sched);
 
-    /** Loop over the dimensions of function stage 'f_handle' starting from innermost
-     * and vectorize the first pure dimension encountered. */
+    // Loop over the dimensions of function stage 'f_handle' starting from innermost
+    // and vectorize the first pure dimension encountered.
     void vectorize_stage(
         const Group &g, Stage f_handle, int stage_num, Definition def,
         Function func, bool is_group_output, const Target &t, set<string> &rvars,
         map<string, int64_t> &estimates, AutoSchedule &sched);
 
-    /** Reorder the dimensions to preserve spatial locality. This function
-     * checks the stride of each access. The dimensions of the loop are reordered
-     * such that the dimension with the smallest access stride is innermost.
-     * This takes the strides along each dimension as input. */
+    // Reorder the dimensions to preserve spatial locality. This function
+    // checks the stride of each access. The dimensions of the loop are reordered
+    // such that the dimension with the smallest access stride is innermost.
+    // This takes the strides along each dimension as input.
     void reorder_dims(Stage f_handle, int stage_num, Definition def,
                       map<string, int64_t> strides, AutoSchedule &sched);
 
-    /** Helper function to display partition information of the pipeline. */
-    // @{
+    // Helper functions to display partition information of the pipeline.
     void disp_pipeline_costs();
     void disp_pipeline_bounds();
     void disp_pipeline_graph();
     void disp_grouping();
-    // @}
 };
 
 void Partitioner::disp_grouping() {
-    debug(3) << "\n=========" << '\n';
-    debug(3) << "Grouping:" << '\n';
-    debug(3) << "=========" << '\n';
+    debug(0) << "\n=========" << '\n';
+    debug(0) << "Grouping:" << '\n';
+    debug(0) << "=========" << '\n';
     for (const auto &g : groups) {
-        debug(3) << g.second << '\n';
+        debug(0) << g.second << '\n';
     }
-    debug(3) << "=========" << '\n';
+    debug(0) << "=========" << '\n';
 }
 
 void Partitioner::disp_pipeline_graph() {
-    debug(3) << "\n================" << '\n';
-    debug(3) << "Pipeline graph:" << '\n';
-    debug(3) << "================" << '\n';
+    debug(0) << "\n================" << '\n';
+    debug(0) << "Pipeline graph:" << '\n';
+    debug(0) << "================" << '\n';
     for (const auto &f : children) {
-        debug(3) << f.first << ": {";
+        debug(0) << f.first << ": {";
         for (auto iter = f.second.begin(); iter != f.second.end(); ++iter) {
             if (std::distance(f.second.begin(), iter) > 0) {
-                debug(3) << ", ";
+                debug(0) << ", ";
             }
-            debug(3) << *iter;
+            debug(0) << *iter;
         }
-        debug(3) << "}" << '\n';
+        debug(0) << "}" << '\n';
     }
-    debug(3) << "================" << '\n';
+    debug(0) << "================" << '\n';
 }
 
 void Partitioner::disp_pipeline_bounds() {
-    debug(3) << "\n================" << '\n';
-    debug(3) << "Pipeline bounds:" << '\n';
-    debug(3) << "================" << '\n';
+    debug(0) << "\n================" << '\n';
+    debug(0) << "Pipeline bounds:" << '\n';
+    debug(0) << "================" << '\n';
     disp_regions(pipeline_bounds);
-    debug(3) << "===============" << '\n';
+    debug(0) << "===============" << '\n';
 }
 
 Cost Partitioner::get_pipeline_cost() {
@@ -1010,26 +994,26 @@ Cost Partitioner::get_pipeline_cost() {
 void Partitioner::disp_pipeline_costs() {
     internal_assert(!group_costs.empty());
     Cost total_cost(0, 0);
-    debug(3) << "\n===============" << '\n';
-    debug(3) << "Pipeline costs:" << '\n';
-    debug(3) << "===============" << '\n';
-    debug(3) << "Group: (name) [arith cost, mem cost, parallelism]" << '\n';
+    debug(0) << "\n===============" << '\n';
+    debug(0) << "Pipeline costs:" << '\n';
+    debug(0) << "===============" << '\n';
+    debug(0) << "Group: (name) [arith cost, mem cost, parallelism]" << '\n';
     for (const pair<FStage, Group> &g : groups) {
         const GroupAnalysis &analysis = get_element(group_costs, g.first);
         total_cost.arith += analysis.cost.arith;
         total_cost.memory += analysis.cost.memory;
 
-        debug(3) << "Group: " << g.first << " [";
-        debug(3) << analysis.cost.arith << ", " << analysis.cost.memory
+        debug(0) << "Group: " << g.first << " [";
+        debug(0) << analysis.cost.arith << ", " << analysis.cost.memory
                  << ", " << analysis.parallelism << "]\n";
     }
-    debug(3) << "Total arithmetic cost: " << total_cost.arith << '\n';
-    debug(3) << "Total memory cost: " << total_cost.memory << '\n';
-    debug(3) << "===============" << '\n';
+    debug(0) << "Total arithmetic cost: " << total_cost.arith << '\n';
+    debug(0) << "Total memory cost: " << total_cost.memory << '\n';
+    debug(0) << "===============" << '\n';
 }
 
-/** Construct a partitioner and build the pipeline graph on which the grouping
- * algorithm operates. */
+// Construct a partitioner and build the pipeline graph on which the grouping
+// algorithm operates.
 Partitioner::Partitioner(const map<string, Box> &_pipeline_bounds,
                          const MachineParams &_arch_params,
                          DependenceAnalysis &_dep_analysis,
@@ -1120,7 +1104,9 @@ map<string, int64_t> Partitioner::evaluate_reuse(const FStage &stg,
 
     for (size_t d = 0; d < dims.size() - 1; d++) {
         int64_t total_reuse = 0;
-        disp_regions(reuse_regions[d]);
+        if (debug::debug_level() >= 3) {
+            disp_regions(reuse_regions[d]);
+        }
         for (const auto &reg : reuse_regions[d]) {
             int64_t size = box_size(reg.second);
             if (size != unknown) {
@@ -1320,10 +1306,10 @@ Partitioner::find_best_tile_config(const Group &g) {
                                            no_redundant_work, true);
 
         if (show_analysis) {
-            debug(3) << "Benefit relative to not tiling:" << benefit << '\n';
-            debug(3) << "Best analysis:" << new_analysis;
-            debug(3) << "No tile analysis:" << no_tile_analysis;
-            debug(3)
+            debug(0) << "Benefit relative to not tiling:" << benefit << '\n';
+            debug(0) << "Best analysis:" << new_analysis;
+            debug(0) << "No tile analysis:" << no_tile_analysis;
+            debug(0)
                 << "arith cost:" << (float)new_analysis.cost.arith / no_tile_analysis.cost.arith
                 << ", mem cost:" << (float)new_analysis.cost.memory / no_tile_analysis.cost.memory << '\n';
         }
@@ -1381,11 +1367,11 @@ void Partitioner::group(Partitioner::Level level) {
                 // when grouping for computing in tiles.
                 // TODO: The current scheduling model does not allow functions
                 // to be computed at different points.
-                if ((num_children == 1) && (level == Partitioner::FAST_MEM)) {
+                if ((num_children == 1) && (level == Partitioner::Level::FastMem)) {
                     const string &prod_name = prod_f.name();
                     const string &cons_name = (*child_groups.begin());
                     cand.push_back(make_pair(prod_name, cons_name));
-                } else if((level == Partitioner::INLINE) && prod_f.is_pure()) {
+                } else if((level == Partitioner::Level::Inline) && prod_f.is_pure()) {
                     const string &prod_name = prod_f.name();
                     cand.push_back(make_pair(prod_name, ""));
                 }
@@ -1462,9 +1448,9 @@ void Partitioner::group(Partitioner::Level level) {
         }
 
         Cost post_merge = get_pipeline_cost();
-
-        disp_pipeline_costs();
-
+        if (debug::debug_level() >= 3) {
+            disp_pipeline_costs();
+        }
         internal_assert((pre_merge.arith + pre_merge.memory) >=
                         (post_merge.arith + post_merge.memory));
     }
@@ -1740,14 +1726,14 @@ Partitioner::GroupAnalysis Partitioner::analyze_group(const Group &g, bool show_
     }
 
     if (show_analysis) {
-        debug(3) << "\nDetailed loads:\n";
+        debug(0) << "\nDetailed loads:\n";
         for (const auto &f_load : group_load_costs) {
-            debug(3) << "(" << f_load.first << "," << f_load.second << ")";
+            debug(0) << "(" << f_load.first << "," << f_load.second << ")";
         }
-        debug(3) << '\n';
+        debug(0) << '\n';
 
-        debug(3) << "\nPer tile memory cost:" << per_tile_cost.memory << '\n';
-        debug(3) << "Per tile arith cost:" << per_tile_cost.arith << '\n';
+        debug(0) << "\nPer tile memory cost:" << per_tile_cost.memory << '\n';
+        debug(0) << "Per tile arith cost:" << per_tile_cost.arith << '\n';
     }
 
     g_analysis.cost.memory = per_tile_cost.memory * estimate_tiles;
@@ -1796,7 +1782,7 @@ void Partitioner::merge_groups(const GroupingChoice &choice, const GroupConfig &
                                    cand_group.members.begin(),
                                    cand_group.members.end());
 
-        if (level == Partitioner::INLINE) {
+        if (level == Partitioner::Level::Inline) {
             for (const auto &stg : cand_group.members) {
                 child_group.inlined.insert(stg.func.name());
             }
@@ -1837,7 +1823,7 @@ Partitioner::GroupConfig Partitioner::evaluate_choice(const GroupingChoice &choi
     GroupAnalysis group_analysis;
     map<string, int> best_tile_config;
 
-    if (level == Partitioner::INLINE) {
+    if (level == Partitioner::Level::Inline) {
         // Set the tile sizes to one along all dimensions of the consumer group
         map<string, int> tile_sizes;
 
@@ -2041,8 +2027,8 @@ string get_base_name(string name) {
     return name;
 }
 
-/** Return true if any of the values or args in 'def' refers to any of
- * the inputs or outputs, with access function which depends on 'var'. */
+// Return true if any of the values or args in 'def' refers to any of
+// the inputs or outputs, with access function which depends on 'var'.
 bool access_inputs_or_outputs(Definition def, VarOrRVar var,
                               const map<string, Type> &inputs,
                               const vector<Function> &outputs) {
@@ -2312,7 +2298,7 @@ void Partitioner::reorder_dims(Stage f_handle, int stage_num, Definition def,
     sched.push_schedule(f_handle.name(), stage_num, "reorder(" + var_order + ")");
 }
 
-/** Visitor to find all the variables the depend on a variable. */
+// Visitor to find all the variables the depend on a variable.
 class FindVarsUsingVar : public IRVisitor {
     using IRVisitor::visit;
 
@@ -2792,9 +2778,9 @@ void validate_no_partial_schedules(const Function &f) {
 
 } // anonymous namespace
 
-/** Generate schedules for all functions in the pipeline required to compute the
- * outputs. This applies the schedules and returns a string representation of
- * the schedules. The target architecture is specified by 'target'. */
+// Generate schedules for all functions in the pipeline required to compute the
+// outputs. This applies the schedules and returns a string representation of
+// the schedules. The target architecture is specified by 'target'.
 string generate_schedules(const vector<Function> &outputs, const Target &target,
                           const MachineParams &arch_params) {
     // Make an environment map which is used throughout the auto scheduling process.
@@ -2835,7 +2821,9 @@ string generate_schedules(const vector<Function> &outputs, const Target &target,
     // Initialize the cost model.
     // Compute the expression costs for each function in the pipeline.
     RegionCosts costs(env);
-    costs.disp_func_costs();
+    if (debug::debug_level() >= 3) {
+        costs.disp_func_costs();
+    }
 
     Partitioner part(pipeline_bounds, arch_params, dep_analysis, costs, outputs);
 
@@ -2858,21 +2846,28 @@ string generate_schedules(const vector<Function> &outputs, const Target &target,
 
     // Display the current pipeline graph.
     // TODO: Output the graph in dot format.
-    part.disp_pipeline_graph();
-    part.disp_pipeline_bounds();
+    if (debug::debug_level() >= 3) {
+        part.disp_pipeline_graph();
+        part.disp_pipeline_bounds();
+    }
 
     part.initialize_groups();
-    part.disp_pipeline_costs();
+    if (debug::debug_level() >= 3) {
+        part.disp_pipeline_costs();
+    }
 
-    part.group(Partitioner::INLINE);
-    part.disp_grouping();
+    part.group(Partitioner::Level::Inline);
+    if (debug::debug_level() >= 3) {
+        part.disp_grouping();
+    }
 
     part.grouping_cache.clear();
-    part.group(Partitioner::FAST_MEM);
-
-    part.disp_pipeline_costs();
-    part.disp_grouping();
-    part.disp_pipeline_graph();
+    part.group(Partitioner::Level::FastMem);
+    if (debug::debug_level() >= 3) {
+        part.disp_pipeline_costs();
+        part.disp_grouping();
+        part.disp_pipeline_graph();
+    }
 
     AutoSchedule sched;
     part.generate_cpu_schedule(target, sched);

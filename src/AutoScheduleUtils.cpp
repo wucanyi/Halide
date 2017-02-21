@@ -45,13 +45,13 @@ int64_t box_size(const Box &b) {
 
 void combine_load_costs(map<string, int64_t> &result, const map<string, int64_t> &partial) {
     for (const auto &kv : partial) {
-        int64_t prev_cost = result[kv.first];
-        if (prev_cost == unknown) {
+        int64_t &cost = result[kv.first];
+        if (cost == unknown) {
             continue;
         } else if (kv.second == unknown) {
-            result[kv.first] = unknown;
+            cost = unknown;
         } else {
-            result[kv.first] = prev_cost + kv.second;
+            cost += kv.second;
         }
     }
 }
@@ -159,9 +159,9 @@ set<string> get_parents(Function f, int stage) {
 
 void disp_regions(const map<string, Box> &regions) {
     for (const auto &reg : regions) {
-        debug(3) << reg.first << " -> ";
-        debug(3) << reg.second;
-        debug(3) << "\n";
+        debug(0) << reg.first << " -> ";
+        debug(0) << reg.second;
+        debug(0) << "\n";
     }
 }
 

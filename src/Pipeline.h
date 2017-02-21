@@ -81,7 +81,7 @@ public:
 
     /** Generate a schedule for the pipeline. */
     EXPORT std::string auto_schedule(const Target &target,
-                                     const Internal::MachineParams &arch_params);
+                                     const MachineParams &arch_params);
 
     EXPORT std::string auto_schedule(const Target &target);
 

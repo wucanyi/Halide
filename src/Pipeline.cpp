@@ -179,7 +179,6 @@ string Pipeline::auto_schedule(const Target &target) {
     // Default machine parameters for generic CPU architecture.
     MachineParams arch_params;
     arch_params.parallelism = 16;
-    arch_params.vec_len = 8;
     arch_params.last_level_cache_size = 2 * 8 * 1024 * 1024; // ~16 MB
     arch_params.balance = 40;
 

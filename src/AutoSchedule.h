@@ -11,16 +11,19 @@
 
 namespace Halide {
 
-namespace Internal {
-
+/** A struct representing the machine parameters to generate the auto-scheduled
+ * code for. */
 struct MachineParams {
+	/** Maximum level of parallelism avalaible. */
     uint32_t parallelism;
-    uint32_t vec_len;
+    /** Size of the last-level cache. */
     uint32_t last_level_cache_size;
-    /** 'balance' indicates how much more expensive is the cost of a load
-     * compared the cost of an arithmetic operation at last level of cache. */
+    /** Indicates how much more expensive is the cost of a load compared to
+     * the cost of an arithmetic operation at last level cache. */
     uint32_t balance;
 };
+
+namespace Internal {
 
 /** Generate schedules for Funcs within a pipeline. The Funcs should not already
  * have specializations or schedules as the current auto-scheduler does not take
