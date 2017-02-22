@@ -9,9 +9,9 @@ using namespace Halide;
 #include <limits>
 
 double run_test(bool auto_schedule) {
-    int H = 1920;
-    int W = 1024;
-    Buffer<float> in(H, W, 3);
+    int W = 1920;
+    int H = 1024;
+    Buffer<float> in(W, H, 3);
 
     for (int y = 0; y < in.height(); y++) {
         for (int x = 0; x < in.width(); x++) {
@@ -62,9 +62,6 @@ double run_test(bool auto_schedule) {
     RDom dx(-radius, 2*radius+1);
     final(x, y, c) = maximum(vert(x + dx, y, c, clamp(filter_height(dx), 0, radius+1)));
 
-    final.estimate(x, 0, in.width()).estimate(y, 0, in.height()).estimate(c, 0, in.channels());
-
-    // Auto schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(final);
 
@@ -105,6 +102,11 @@ double run_test(bool auto_schedule) {
             // 7:42pm. 110ms !!!
         }
     } else {
+        // Provide estimates on the pipeline output
+        final.estimate(x, 0, in.width())
+            .estimate(y, 0, in.height())
+            .estimate(c, 0, in.channels());
+        // Auto-schedule the pipeline
         p.auto_schedule(target);
     }
 

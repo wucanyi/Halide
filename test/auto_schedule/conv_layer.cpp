@@ -7,11 +7,10 @@ double run_test_1(bool auto_schedule) {
     // TODO: Replace the parameters with the meaningful constant names
     Buffer<float> data(128, 128, 64, 4);
 
-    int pad = 1; // padding required to handle boundaries
+    int pad = 1; // Padding required to handle boundaries
 
     Func f_in_bound("f_in_bound");
-    f_in_bound = BoundaryConditions::repeat_edge(data, 0, 128,
-                                                 0, 128);
+    f_in_bound = BoundaryConditions::repeat_edge(data, 0, 128, 0, 128);
     Buffer<float> W(3, 3, 64, 64), b(64);
 
     Var x("x"), y("y"), z("z"), n("n");
@@ -21,57 +20,52 @@ double run_test_1(bool auto_schedule) {
 
     f_conv(x, y, z, n) = b(z);
 
-    f_conv(x, y, z, n) += W(r.x, r.y, r.z, z) *
-            f_in_bound(x + r.x - pad,
-                       y + r.y - pad,
-                       r.z, n);
+    f_conv(x, y, z, n) += W(r.x, r.y, r.z, z) * f_in_bound(x + r.x - pad, y + r.y - pad, r.z, n);
 
     Func f_ReLU("ReLU");
     f_ReLU(x, y, z, n) = max(0, f_conv(x, y, z, n));
 
     // Specifying estimates
-    f_ReLU.estimate(x, 0, 128).
-            estimate(y, 0, 128).
-            estimate(z, 0, 64).
-            estimate(n, 0, 4);
+    f_ReLU.estimate(x, 0, 128)
+        .estimate(y, 0, 128)
+        .estimate(z, 0, 64)
+        .estimate(n, 0, 4);
 
-    // Auto schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(f_ReLU);
 
     if (!auto_schedule) {
-
         if (target.has_gpu_feature()) {
             Var ni, no, xi, xo, yi, yo, zi, zo;
             f_ReLU.compute_root()
-                    .split(x, xo, xi, 8)
-                    .split(y, yo, yi, 8)
-                    .split(z, zo, zi, 16)
-                    .reorder(xi, yi, zi, n, xo, yo, zo)
-                    .gpu_threads(xi, yi, zi)
-                    .gpu_blocks(xo, yo, zo);
+                .split(x, xo, xi, 8)
+                .split(y, yo, yi, 8)
+                .split(z, zo, zi, 16)
+                .reorder(xi, yi, zi, n, xo, yo, zo)
+                .gpu_threads(xi, yi, zi)
+                .gpu_blocks(xo, yo, zo);
 
             f_conv.compute_at(f_ReLU, n)
-                    .gpu_threads(x, y, z)
-                    .update()
-                    .unroll(r.x)
-                    .unroll(r.y)
-                    .gpu_threads(x, y, z);
+                .gpu_threads(x, y, z)
+                .update()
+                .unroll(r.x)
+                .unroll(r.y)
+                .gpu_threads(x, y, z);
 
             Var v0 = f_in_bound.args()[0];
             Var v1 = f_in_bound.args()[1];
             Var v2 = f_in_bound.args()[2];
             Var v0o, v0i, v1o, v1i, v2o, v2i;
             f_in_bound.compute_at(f_ReLU, n)
-                    .split(v0, v0o, v0i, 2)
-                    .split(v1, v1o, v1i, 2)
-                    .split(v2, v2o, v2i, 4)
-                    .reorder(v0i, v1i, v2i, v0o, v1o, v2o)
-                    .unroll(v0i)
-                    .unroll(v1i)
-                    .gpu_threads(v0o, v1o, v2o);
+                .split(v0, v0o, v0i, 2)
+                .split(v1, v1o, v1i, 2)
+                .split(v2, v2o, v2i, 4)
+                .reorder(v0i, v1i, v2i, v0o, v1o, v2o)
+                .unroll(v0i)
+                .unroll(v1i)
+                .gpu_threads(v0o, v1o, v2o);
         } else {
-            // blocking spatially with vectorization
+            // Blocking spatially with vectorization
             Var z_t, y_t, par;
             int vec_len = 8;
             int o_block_size = 32;
@@ -90,6 +84,7 @@ double run_test_1(bool auto_schedule) {
             f_ReLU.reorder(n, z).parallel(z).vectorize(x, 8);
         }
     } else {
+        // Auto-schedule the pipeline
         p.auto_schedule(target);
     }
 
@@ -117,40 +112,38 @@ double run_test_2(bool auto_schedule) {
 
     f_conv(x, y, z, n) = b(z);
 
-    f_conv(x, y, z, n) += W(r.x, r.y, r.z, z) *
-                          data(x + r.x, y + r.y, r.z, n);
+    f_conv(x, y, z, n) += W(r.x, r.y, r.z, z) * data(x + r.x, y + r.y, r.z, n);
 
     Func f_ReLU("ReLU");
     f_ReLU(x, y, z, n) = max(0, f_conv(x, y, z, n));
 
     // Specifying estimates
-    f_ReLU.estimate(x, 0, 128).
-            estimate(y, 0, 128).
-            estimate(z, 0, 64).
-            estimate(n, 0, 4);
+    f_ReLU.estimate(x, 0, 128)
+        .estimate(y, 0, 128)
+        .estimate(z, 0, 64)
+        .estimate(n, 0, 4);
 
-    // Auto schedule the pipeline
+    // Auto-schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(f_ReLU);
 
     if (!auto_schedule) {
-
         if (target.has_gpu_feature()) {
             Var ni, no, xi, xo, yi, yo, zi, zo;
             f_ReLU.compute_root()
-                    .split(x, xo, xi, 8)
-                    .split(y, yo, yi, 8)
-                    .split(z, zo, zi, 16)
-                    .reorder(xi, yi, zi, n, xo, yo, zo)
-                    .gpu_threads(xi, yi, zi)
-                    .gpu_blocks(xo, yo, zo);
+                .split(x, xo, xi, 8)
+                .split(y, yo, yi, 8)
+                .split(z, zo, zi, 16)
+                .reorder(xi, yi, zi, n, xo, yo, zo)
+                .gpu_threads(xi, yi, zi)
+                .gpu_blocks(xo, yo, zo);
 
             f_conv.compute_at(f_ReLU, n)
-                    .gpu_threads(x, y, z)
-                    .update()
-                    .unroll(r.x)
-                    .unroll(r.y)
-                    .gpu_threads(x, y, z);
+                .gpu_threads(x, y, z)
+                .update()
+                .unroll(r.x)
+                .unroll(r.y)
+                .gpu_threads(x, y, z);
         } else {
             // blocking spatially with vectorization
             Var z_t, y_t, par;

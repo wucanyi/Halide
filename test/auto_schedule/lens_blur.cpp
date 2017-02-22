@@ -154,21 +154,16 @@ double run_test(bool auto_schedule) {
     // We use this sample if it's from a pixel whose bokeh influences
     // this output pixel. Here's a crude approximation that ignores
     // some subtleties of occlusion edges and inpaints behind objects.
-    Expr sample_is_within_bokeh_of_this_pixel =
-            r_squared < bokeh_radius_squared(x, y);
-
-    Expr this_pixel_is_within_bokeh_of_sample =
-            r_squared < bokeh_radius_squared(sample_x, sample_y);
-
-    Expr sample_is_in_front_of_this_pixel =
-            depth(sample_x, sample_y) < depth(x, y);
+    Expr sample_is_within_bokeh_of_this_pixel = r_squared < bokeh_radius_squared(x, y);
+    Expr this_pixel_is_within_bokeh_of_sample = r_squared < bokeh_radius_squared(sample_x, sample_y);
+    Expr sample_is_in_front_of_this_pixel = depth(sample_x, sample_y) < depth(x, y);
 
     Func sample_weight;
     sample_weight(x, y, z) =
-            select((sample_is_within_bokeh_of_this_pixel ||
-                    sample_is_in_front_of_this_pixel) &&
-                   this_pixel_is_within_bokeh_of_sample,
-                   1.0f, 0.0f);
+        select((sample_is_within_bokeh_of_this_pixel ||
+                sample_is_in_front_of_this_pixel) &&
+               this_pixel_is_within_bokeh_of_sample,
+               1.0f, 0.0f);
 
     sample_x = x + sample_locations(x, y, s)[0];
     sample_y = y + sample_locations(x, y, s)[1];
@@ -179,50 +174,50 @@ double run_test(bool auto_schedule) {
     final(x, y, c) = output(x, y, c) / output(x, y, 3);
 
     final.estimate(x, 0, left_im.width())
-            .estimate(y, 0, left_im.height())
-            .estimate(c, 0, 3);
+        .estimate(y, 0, left_im.height())
+        .estimate(c, 0, 3);
 
-    // Auto schedule the pipeline
+    // Auto-schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(final);
 
     if (!auto_schedule) {
         if (target.has_gpu_feature()) {
             cost_pyramid_push[0].compute_root()
-                    .reorder(c, z, x, y)
-                    .bound(c, 0, 2)
-                    .unroll(c)
-                    .gpu_tile(x, y, 16, 16);
+                .reorder(c, z, x, y)
+                .bound(c, 0, 2)
+                .unroll(c)
+                .gpu_tile(x, y, 16, 16);
 
             cost.compute_at(cost_pyramid_push[0], Var::gpu_threads());
             cost_confidence.compute_at(cost_pyramid_push[0], Var::gpu_threads());
 
             for (int i = 1; i < 8; i++) {
                 cost_pyramid_push[i].compute_root()
-                        .gpu_tile(x, y, z, 8, 8, 8);
+                    .gpu_tile(x, y, z, 8, 8, 8);
                 cost_pyramid_pull[i].compute_root()
-                        .gpu_tile(x, y, z, 8, 8, 8);
+                    .gpu_tile(x, y, z, 8, 8, 8);
             }
 
             depth.compute_root()
-                    .gpu_tile(x, y, 16, 16);
+                .gpu_tile(x, y, 16, 16);
 
             input_with_alpha.compute_root()
-                    .reorder(c, x, y).unroll(c).gpu_tile(x, y, 16, 16);
+                .reorder(c, x, y).unroll(c).gpu_tile(x, y, 16, 16);
 
             worst_case_bokeh_radius_y
-                    .compute_root()
-                    .gpu_tile(x, y, 16, 16);
+                .compute_root()
+                .gpu_tile(x, y, 16, 16);
 
             worst_case_bokeh_radius
-                    .compute_root()
-                    .gpu_tile(x, y, 16, 16);
+                .compute_root()
+                .gpu_tile(x, y, 16, 16);
 
             final.compute_root()
-                    .reorder(c, x, y)
-                    .bound(c, 0, 3)
-                    .unroll(c)
-                    .gpu_tile(x, y, 16, 16);
+                .reorder(c, x, y)
+                .bound(c, 0, 3)
+                .unroll(c)
+                .gpu_tile(x, y, 16, 16);
 
             output.compute_at(final, Var::gpu_threads());
             output.update().reorder(c, x, s).unroll(c);
@@ -234,36 +229,36 @@ double run_test(bool auto_schedule) {
             // bokeh_radius is a pretty simple function of depth. Maybe I should inline it.
 
             cost_pyramid_push[0].compute_root()
-                    .reorder(c, z, x, y)
-                    .bound(c, 0, 2)
-                    .unroll(c)
-                    .vectorize(x, 16)
-                    .parallel(y, 4);
+                .reorder(c, z, x, y)
+                .bound(c, 0, 2)
+                .unroll(c)
+                .vectorize(x, 16)
+                .parallel(y, 4);
             cost.compute_at(cost_pyramid_push[0], x)
-                    .vectorize(x);
+                .vectorize(x);
             cost_confidence.compute_at(cost_pyramid_push[0], x)
-                    .vectorize(x);
+                .vectorize(x);
 
             Var xi, yi, t;
             for (int i = 1; i < 8; i++) {
                 cost_pyramid_push[i].compute_at(cost_pyramid_pull[1], t)
-                        .vectorize(x, 8);
+                    .vectorize(x, 8);
                 if (i > 1) {
                     cost_pyramid_pull[i].compute_at(cost_pyramid_pull[1], t)
-                            .tile(x, y, xi, yi, 8, 2)
-                            .vectorize(xi)
-                            .unroll(yi);
+                        .tile(x, y, xi, yi, 8, 2)
+                        .vectorize(xi)
+                        .unroll(yi);
                 }
             }
 
 
             cost_pyramid_pull[1].compute_root()
-                    .fuse(z, c, t).parallel(t)
-                    .tile(x, y, xi, yi, 8, 2).vectorize(xi).unroll(yi);
+                .fuse(z, c, t).parallel(t)
+                .tile(x, y, xi, yi, 8, 2).vectorize(xi).unroll(yi);
 
             depth.compute_root()
-                    .tile(x, y, xi, yi, 8, 2).vectorize(xi).unroll(yi)
-                    .parallel(y, 8);
+                .tile(x, y, xi, yi, 8, 2).vectorize(xi).unroll(yi)
+                .parallel(y, 8);
 
             input_with_alpha.compute_root().reorder(c, x, y).unroll(c).vectorize(x, 8).parallel(y, 8);
 

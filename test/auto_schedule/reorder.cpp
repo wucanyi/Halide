@@ -16,17 +16,18 @@ double run_test_1(bool auto_schedule) {
     int search_area = 7;
     RDom dom(-search_area/2, search_area, -search_area/2, search_area, "dom");
 
-    // If f is inlined into r the only storage layout that the auto scheduler
-    // needs to care about is that of r.
+    // If 'f' is inlined into 'r', the only storage layout that the auto scheduler
+    // needs to care about is that of 'r'.
     Func r("r");
     r(x, y, c) += f(x, y+1, dom.x, dom.y) * f(x, y-1, dom.x, dom.y) * c;
-
-    r.estimate(x, 0, 1024).estimate(y, 0, 1024).estimate(c, 0, 3);
 
     Target target = get_target_from_environment();
     Pipeline p(r);
 
     if (auto_schedule) {
+        // Provide estimates on the pipeline output
+        r.estimate(x, 0, 1024).estimate(y, 0, 1024).estimate(c, 0, 3);
+        // Auto-schedule the pipeline
         p.auto_schedule(target);
     } else {
         /*
@@ -51,8 +52,8 @@ double run_test_1(bool auto_schedule) {
 double run_test_2(bool auto_schedule) {
     Var x("x"), y("y"), z("z"), c("c");
 
-    int H = 1920;
     int W = 1024;
+    int H = 1920;
     Buffer<uint8_t> left_im(W, H, 3);
     Buffer<uint8_t> right_im(W, H, 3);
 
@@ -72,15 +73,16 @@ double run_test_2(bool auto_schedule) {
     diff(x, y, z, c) = min(absd(left(x, y, c), right(x + 2*z, y, c)),
                            absd(left(x, y, c), right(x + 2*z + 1, y, c)));
 
-    diff.estimate(x, 0, left_im.width()).
-         estimate(y, 0, left_im.height()).
-         estimate(z, 0, 32).
-         estimate(c, 0, 3);
-
     Target target = get_target_from_environment();
     Pipeline p(diff);
 
     if (auto_schedule) {
+        // Provide estimates on the pipeline output
+        diff.estimate(x, 0, left_im.width()).
+             estimate(y, 0, left_im.height()).
+             estimate(z, 0, 32).
+             estimate(c, 0, 3);
+        // Auto-schedule the pipeline
         p.auto_schedule(target);
     } else {
         Var t("t");
@@ -99,7 +101,6 @@ double run_test_2(bool auto_schedule) {
 }
 
 double run_test_3(bool auto_schedule) {
-
     Buffer<uint8_t> im(1024, 1028, 14, 14);
 
     Var x("x"), y("y"), dx("dx"), dy("dy"), c("c");

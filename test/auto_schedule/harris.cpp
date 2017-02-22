@@ -6,14 +6,14 @@ using namespace Halide;
 
 Expr sum3x3(Func f, Var x, Var y) {
     return f(x-1, y-1) + f(x-1, y) + f(x-1, y+1) +
-            f(x, y-1)   + f(x, y)   + f(x, y+1) +
-            f(x+1, y-1) + f(x+1, y) + f(x+1, y+1);
+           f(x, y-1)   + f(x, y)   + f(x, y+1) +
+           f(x+1, y-1) + f(x+1, y) + f(x+1, y+1);
 }
 
 double run_test(bool auto_schedule) {
-    int H = 1920;
-    int W = 1024;
-    Buffer<float> in(H, W, 3);
+    int W = 1920;
+    int H = 1024;
+    Buffer<float> in(W, H, 3);
 
     for (int y = 0; y < in.height(); y++) {
         for (int x = 0; x < in.width(); x++) {
@@ -30,18 +30,15 @@ double run_test(bool auto_schedule) {
     Func gray("gray");
     gray(x, y) = 0.299f * in_b(x, y, 0) + 0.587f * in_b(x, y, 1) + 0.114f * in_b(x, y, 2);
 
-
     Func Iy("Iy");
     Iy(x, y) = gray(x-1, y-1)*(-1.0f/12) + gray(x-1, y+1)*(1.0f/12) +
-            gray(x, y-1)*(-2.0f/12) + gray(x, y+1)*(2.0f/12) +
-            gray(x+1, y-1)*(-1.0f/12) + gray(x+1, y+1)*(1.0f/12);
-
+               gray(x, y-1)*(-2.0f/12) + gray(x, y+1)*(2.0f/12) +
+               gray(x+1, y-1)*(-1.0f/12) + gray(x+1, y+1)*(1.0f/12);
 
     Func Ix("Ix");
     Ix(x, y) = gray(x-1, y-1)*(-1.0f/12) + gray(x+1, y-1)*(1.0f/12) +
-            gray(x-1, y)*(-2.0f/12) + gray(x+1, y)*(2.0f/12) +
-            gray(x-1, y+1)*(-1.0f/12) + gray(x+1, y+1)*(1.0f/12);
-
+               gray(x-1, y)*(-2.0f/12) + gray(x+1, y)*(2.0f/12) +
+               gray(x-1, y+1)*(-1.0f/12) + gray(x+1, y+1)*(1.0f/12);
 
     Func Ixx("Ixx");
     Ixx(x, y) = Ix(x, y) * Ix(x, y);
@@ -58,7 +55,6 @@ double run_test(bool auto_schedule) {
 
     Func Syy("Syy");
     Syy(x, y) = sum3x3(Iyy, x, y);
-
 
     Func Sxy("Sxy");
     Sxy(x, y) = sum3x3(Ixy, x, y);
@@ -93,7 +89,7 @@ double run_test(bool auto_schedule) {
             Iy.compute_at(shifted, x).vectorize(x, 8);
         }
     } else {
-        // Auto schedule the pipeline
+        // Auto-schedule the pipeline
         p.auto_schedule(target);
     }
 

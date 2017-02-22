@@ -4,16 +4,15 @@
 using namespace Halide;
 
 double run_test(bool auto_schedule) {
-    int H = 2560;
-    int W = 1536;
-    Buffer<float> input(H, W);
+    int W = 2560;
+    int H = 1536;
+    Buffer<float> input(W, H);
 
     for (int y = 0; y < input.height(); y++) {
         for (int x = 0; x < input.width(); x++) {
                 input(x, y) = rand() & 0xfff;
         }
     }
-
 
     float r_sigma = 0.1;
     int s_sigma = 8;
@@ -31,7 +30,7 @@ double run_test(bool auto_schedule) {
     histogram(x, y, z, c) = 0.0f;
     histogram(x, y, zi, c) += select(c == 0, val, 1.0f);
 
-    // TODO: compute the estimate from the parameter values
+    // TODO: Compute the estimate from the parameter values
     histogram.estimate(z, -2, 16);
 
     // Blur the grid using a five-tap filter
@@ -52,7 +51,7 @@ double run_test(bool auto_schedule) {
                          blurx(x, y+1, z, c)*4 +
                          blurx(x, y+2, z, c));
 
-    // TODO: compute the estimate from the parameter values
+    // TODO: Compute the estimate from the parameter values
     blurz.estimate(z, 0, 12);
     blurx.estimate(z, 0, 12);
     blury.estimate(z, 0, 12);

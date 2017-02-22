@@ -3,9 +3,9 @@
 using namespace Halide;
 
 int main(int argc, char **argv) {
-    int H = 800;
     int W = 800;
-    Buffer<uint16_t> input(H, W);
+    int H = 800;
+    Buffer<uint16_t> input(W, H);
 
     for (int y = 0; y < input.height(); y++) {
         for (int x = 0; x < input.width(); x++) {
@@ -21,10 +21,10 @@ int main(int argc, char **argv) {
     Func g("g");
     g(x, y) = (f(x, y, input(x, y)%10) + f(x + 1, y, (input(x, y) - 1)%10))/2;
 
-    // Specifying estimates
+    // Provide estimates on the pipeline output
     g.estimate(x, 0, input.width() - 1).estimate(y, 0, input.height());
 
-    // Auto schedule the pipeline
+    // Auto-schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(g);
 

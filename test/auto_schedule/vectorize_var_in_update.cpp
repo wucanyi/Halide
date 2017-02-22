@@ -31,11 +31,11 @@ int main(int argc, char **argv) {
     h(x, y) = x + y;
     h(x, y) += g(r.x, r.y) + 3;
 
-    // Provide estimates for pipeline output
+    // Provide estimates on the pipeline output
     h.estimate(x, 0, 50);
     h.estimate(y, 0, 50);
 
-    // Auto schedule the pipeline
+    // Auto-schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(h);
 

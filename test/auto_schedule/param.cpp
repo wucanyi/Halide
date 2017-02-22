@@ -13,9 +13,10 @@ void run_test_1() {
     Func g("g");
     g(x, y) = f(x + offset, y) + f(x - offset, y);
 
+    // Provide estimates on the pipeline output
     g.estimate(x, 0, 1000).estimate(y, 0, 1000);
 
-    // Auto schedule the pipeline
+    // Auto-schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(g);
 
@@ -36,9 +37,10 @@ void run_test_2() {
     Func g("g");
     g(x, y) = f(x + offset, y) + f(x - offset, y);
 
+    // Provide estimates on the pipeline output
     g.estimate(x, 0, 1000).estimate(y, 0, 1000);
 
-    // Auto schedule the pipeline
+    // Auto-schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(g);
 

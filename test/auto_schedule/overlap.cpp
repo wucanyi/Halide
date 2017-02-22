@@ -34,7 +34,7 @@ int main(int argc, char **argv) {
     // Provide esitmates for pipeline outputs
     up[num_levels - 1].estimate(x, 0, 1500).estimate(y, 0, 1500);
 
-    // Auto schedule the pipeline
+    // Auto-schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(up[num_levels - 1]);
 

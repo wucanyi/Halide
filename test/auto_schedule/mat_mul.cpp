@@ -32,10 +32,6 @@ double run_test(bool auto_schedule) {
     Func out;
     out(x, y) = prod(x, y);
 
-    // Specifying estimates
-    out.estimate(x, 0, size).estimate(y, 0, size);
-
-    // Auto schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(out);
 
@@ -51,7 +47,6 @@ double run_test(bool auto_schedule) {
             // multiply-add. We unroll an 8x8 block so that the common
             // loads will be shared. This means we do 16 loads for 64
             // multiply adds, which is a huge win.
-
 
             // prod.update().unroll(x).unroll(y);
             // 53ms
@@ -104,6 +99,9 @@ double run_test(bool auto_schedule) {
             out.print_loop_nest();
         }
     } else {
+        // Provide estimates on the pipeline output
+        out.estimate(x, 0, size).estimate(y, 0, size);
+        // Auto-schedule the pipeline
         p.auto_schedule(target);
     }
 

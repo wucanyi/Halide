@@ -4,9 +4,9 @@
 using namespace Halide;
 
 double run_test(bool auto_schedule) {
-    int H = 1920;
-    int W = 1024;
-    Buffer<uint8_t> in(H, W, 3);
+    int W = 1920;
+    int H = 1024;
+    Buffer<uint8_t> in(W, H, 3);
 
     for (int y = 0; y < in.height(); y++) {
         for (int x = 0; x < in.width(); x++) {
@@ -19,8 +19,7 @@ double run_test(bool auto_schedule) {
     Var x("x"), y("y"), c("c");
 
     Func Y("Y");
-    Y(x, y) = 0.299f * in(x, y, 0) + 0.587f * in(x, y, 1)
-            + 0.114f * in(x, y, 2);
+    Y(x, y) = 0.299f * in(x, y, 0) + 0.587f * in(x, y, 1) + 0.114f * in(x, y, 2);
 
     Func Cr("Cr");
     Expr R = in(x, y, 0);
@@ -57,8 +56,6 @@ double run_test(bool auto_schedule) {
     Expr blue = cast<uint8_t> (clamp(eq(x, y) + 1.765f * (Cb(x, y) - 128), 0, 255));
     color(x, y, c) = select(c == 0, red, select(c == 1, green , blue));
 
-    color.estimate(x, 0, 1920).estimate(y, 0, 1024).estimate(c, 0, 3);
-
     Target target = get_target_from_environment();
     Pipeline p(color);
 
@@ -72,37 +69,39 @@ double run_test(bool auto_schedule) {
             Cb.compute_at(color, Var::gpu_threads());
             eq.compute_at(color, Var::gpu_threads());
             color.compute_root()
-                    .reorder(c, x, y).bound(c, 0, 3).unroll(c)
-                    .gpu_tile(x, y, 16, 16);
+                .reorder(c, x, y).bound(c, 0, 3).unroll(c)
+                .gpu_tile(x, y, 16, 16);
         } else {
             Y.compute_root().parallel(y, 8).vectorize(x, 8);
 
             hist_rows.compute_root()
-                    .vectorize(x, 8)
-                    .parallel(y, 8)
-                    .update()
-                    .parallel(y, 8);
+                .vectorize(x, 8)
+                .parallel(y, 8)
+                .update()
+                .parallel(y, 8);
             hist.compute_root()
-                    .vectorize(x, 8)
-                    .update()
-                    .reorder(x, ry)
-                    .vectorize(x, 8)
-                    .unroll(x, 4)
-                    .parallel(x)
-                    .reorder(ry, x);
+                .vectorize(x, 8)
+                .update()
+                .reorder(x, ry)
+                .vectorize(x, 8)
+                .unroll(x, 4)
+                .parallel(x)
+                .reorder(ry, x);
 
             cdf.compute_root();
             eq.compute_at(color, x).unroll(x);
             Cb.compute_at(color, x).vectorize(x);
             Cr.compute_at(color, x).vectorize(x);
             color.reorder(c, x, y)
-                    .bound(c, 0, 3)
-                    .unroll(c)
-                    .parallel(y, 8)
-                    .vectorize(x, 8);
+                .bound(c, 0, 3)
+                .unroll(c)
+                .parallel(y, 8)
+                .vectorize(x, 8);
         }
     } else {
-        // Auto schedule the pipeline
+        // Provide estimates on the pipeline output
+        color.estimate(x, 0, 1920).estimate(y, 0, 1024).estimate(c, 0, 3);
+        // Auto-schedule the pipeline
         p.auto_schedule(target);
     }
 

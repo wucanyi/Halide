@@ -54,9 +54,10 @@ int main(int argc, char **argv) {
     Func g("g");
     g(x, y) = f1(x, y) + f2(x, y);
 
+    // Provide estimates on the pipeline output
     g.estimate(x, 0, 1000).estimate(y, 0, 1000);
 
-    // Auto schedule the pipeline
+    // Auto-schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(g);
 

@@ -4,9 +4,9 @@
 using namespace Halide;
 
 double run_test(bool auto_schedule) {
-    int H = 1920;
-    int W = 1024;
-    Buffer<float> in(H, W, 3);
+    int W = 1920;
+    int H = 1024;
+    Buffer<float> in(W, H, 3);
 
     for (int y = 0; y < in.height(); y++) {
         for (int x = 0; x < in.width(); x++) {
@@ -26,27 +26,20 @@ double run_test(bool auto_schedule) {
     Func in_bounded = BoundaryConditions::repeat_edge(in);
 
     Func gray("gray");
-
     gray(x, y) = 0.299f * in_bounded(x, y, 0) + 0.587f * in_bounded(x, y, 1) +
                  0.114f * in_bounded(x, y, 2);
 
     Func blur_y("blur_y");
     blur_y(x, y) = (kernel(0) * gray(x, y) +
-                    kernel(1) * (gray(x, y-1) +
-                                 gray(x, y+1)) +
-                    kernel(2) * (gray(x, y-2) +
-                                 gray(x, y+2)) +
-                    kernel(3) * (gray(x, y-3) +
-                                 gray(x, y+3)));
+                    kernel(1) * (gray(x, y-1) + gray(x, y+1)) +
+                    kernel(2) * (gray(x, y-2) + gray(x, y+2)) +
+                    kernel(3) * (gray(x, y-3) + gray(x, y+3)));
 
     Func blur_x("blur_x");
     blur_x(x, y) = (kernel(0) * blur_y(x, y) +
-                    kernel(1) * (blur_y(x-1, y) +
-                                 blur_y(x+1, y)) +
-                    kernel(2) * (blur_y(x-2, y) +
-                                 blur_y(x+2, y)) +
-                    kernel(3) * (blur_y(x-3, y) +
-                                 blur_y(x+3, y)));
+                    kernel(1) * (blur_y(x-1, y) + blur_y(x+1, y)) +
+                    kernel(2) * (blur_y(x-2, y) + blur_y(x+2, y)) +
+                    kernel(3) * (blur_y(x-3, y) + blur_y(x+3, y)));
 
     Func sharpen("sharpen");
     sharpen(x, y) = 2 * gray(x, y) - blur_x(x, y);
@@ -56,10 +49,6 @@ double run_test(bool auto_schedule) {
 
     Func unsharp("unsharp");
     unsharp(x, y, c) = ratio(x, y) * in(x, y, c);
-
-    unsharp.estimate(x, 0, in.width())
-            .estimate(y, 0, in.height())
-            .estimate(c, 0, in.channels());
 
     Target target = get_target_from_environment();
     Pipeline p(unsharp);
@@ -85,7 +74,11 @@ double run_test(bool auto_schedule) {
             unsharp.vectorize(x, 8).parallel(y).reorder(x, c, y);
         }
     } else {
-        // Auto schedule the pipeline
+        // Provide estimates on the pipeline output
+        unsharp.estimate(x, 0, in.width())
+            .estimate(y, 0, in.height())
+            .estimate(c, 0, in.channels());
+        // Auto-schedule the pipeline
         p.auto_schedule(target);
     }
 

@@ -15,12 +15,10 @@ Func blur_cols_transpose(Func input, Expr height, Expr alpha,
     blur(x, 0, c) = input(x, 0, c);
     // Update 1: run the IIR filter down the columns.
     RDom ry(1, height - 1);
-    blur(x, ry, c) =
-            (1 - alpha)*blur(x, ry - 1, c) + alpha*input(x, ry, c);
+    blur(x, ry, c) = (1 - alpha)*blur(x, ry - 1, c) + alpha*input(x, ry, c);
     // Update 2: run the IIR blur up the columns.
     Expr flip_ry = height - ry - 1;
-    blur(x, flip_ry, c) =
-            (1 - alpha)*blur(x, flip_ry + 1, c) + alpha*blur(x, flip_ry, c);
+    blur(x, flip_ry, c) = (1 - alpha)*blur(x, flip_ry + 1, c) + alpha*blur(x, flip_ry, c);
 
     // Transpose the blur.
     Func transpose;
@@ -32,10 +30,10 @@ Func blur_cols_transpose(Func input, Expr height, Expr alpha,
         // and strips (Halide supports nested parallelism).
         Var xo, yo;
         transpose.compute_root()
-                .tile(x, y, xo, yo, x, y, 8, 8)
-                .vectorize(x)
-                .parallel(yo)
-                .parallel(c);
+            .tile(x, y, xo, yo, x, y, 8, 8)
+            .vectorize(x)
+            .parallel(yo)
+            .parallel(c);
 
         // Run the filter on each row of tiles (which corresponds to a strip of
         // columns in the input).
@@ -43,11 +41,11 @@ Func blur_cols_transpose(Func input, Expr height, Expr alpha,
 
         // Vectorize computations within the strips.
         blur.update(1)
-                .reorder(x, ry)
-                .vectorize(x);
+            .reorder(x, ry)
+            .vectorize(x);
         blur.update(2)
-                .reorder(x, ry)
-                .vectorize(x);
+            .reorder(x, ry)
+            .vectorize(x);
     }
 
     return transpose;
@@ -55,9 +53,9 @@ Func blur_cols_transpose(Func input, Expr height, Expr alpha,
 
 double run_test(bool auto_schedule) {
 
-    int H = 1024;
-    int W = 2048;
-    Buffer<float> input(H, W, 3);
+    int W = 1024;
+    int H = 2048;
+    Buffer<float> input(W, H, 3);
 
     for (int c = 0; c < 3; c++) {
         for (int y = 0; y < input.height(); y++) {
@@ -78,21 +76,20 @@ double run_test(bool auto_schedule) {
     input_func(x, y, c) = input(x, y, c);
 
     // First, blur the columns of the input.
-    Func blury_T = blur_cols_transpose(input_func, height, alpha,
-                                       auto_schedule);
+    Func blury_T = blur_cols_transpose(input_func, height, alpha, auto_schedule);
 
     // Blur the columns again (the rows of the original).
-    Func blur = blur_cols_transpose(blury_T, width, alpha,
-                                    auto_schedule);
+    Func blur = blur_cols_transpose(blury_T, width, alpha, auto_schedule);
 
-    // Specifying estimates
-    blur.estimate(x, 0, 1024).estimate(y, 0, 2048).estimate(c, 0, 3);
-
-    // Auto schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(blur);
 
     if (auto_schedule) {
+        // Provide estimates on the pipeline output
+        blur.estimate(x, 0, 1024)
+            .estimate(y, 0, 2048)
+            .estimate(c, 0, 3);
+        // Auto-schedule the pipeline
         p.auto_schedule(target);
     }
 

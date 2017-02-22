@@ -4,9 +4,9 @@ using namespace Halide;
 
 int main(int argc, char **argv) {
 
-    int H = 6400;
-    int W = 4800;
-    Buffer<uint16_t> input(H, W);
+    int W = 6400;
+    int H = 4800;
+    Buffer<uint16_t> input(W, H);
 
     for (int y = 0; y < input.height(); y++) {
         for (int x = 0; x < input.width(); x++) {
@@ -30,10 +30,10 @@ int main(int argc, char **argv) {
                              stencils[i-1](x, y+2))/3;
     }
 
-    // Specifying estimates
+    // Provide estimates on the pipeline output
     stencils[num_stencils - 1].estimate(x, 0, 6200).estimate(y, 0, 4600);
 
-    // Auto schedule the pipeline
+    // Auto-schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(stencils[num_stencils - 1]);
 

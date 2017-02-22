@@ -34,9 +34,9 @@ double run_test(bool auto_schedule) {
     float alpha = 1;
     float beta = 1;
 
-    int H = 2560;
-    int W = 1536;
-    Buffer<uint16_t> input(H, W, 3);
+    int W = 2560;
+    int H = 1536;
+    Buffer<uint16_t> input(W, H, 3);
 
     for (int y = 0; y < input.height(); y++) {
         for (int x = 0; x < input.width(); x++) {
@@ -143,6 +143,7 @@ double run_test(bool auto_schedule) {
     // Convert back to 16-bit
     output(x, y, c) = cast<uint16_t>(clamp(color(x, y, c), 0.0f, 1.0f) * 65535.0f);
 
+    // Specify estimates
     output.estimate(x, 0, 1536).estimate(y, 0, 2560).estimate(c, 0, 3);
 
     /* THE SCHEDULE */
@@ -188,6 +189,7 @@ double run_test(bool auto_schedule) {
             }
         }
     } else {
+        // Auto-schedule the pipeline
         p.auto_schedule(target);
     }
 

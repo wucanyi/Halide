@@ -4,6 +4,7 @@ namespace {
 
 class BilateralGrid : public Halide::Generator<BilateralGrid> {
 public:
+    GeneratorParam<bool>  auto_schedule{"auto_schedule", false};
     GeneratorParam<int>   s_sigma{"s_sigma", 8};
 
     ImageParam            input{Float(32), 2, "input"};
@@ -64,7 +65,21 @@ public:
         Func bilateral_grid("bilateral_grid");
         bilateral_grid(x, y) = interpolated(x, y, 0)/interpolated(x, y, 1);
 
-        if (get_target().has_gpu_feature()) {
+        if (auto_schedule) {
+            // TODO: Provide estimates on the input image
+
+            // Provide estimates on the parameters
+            r_sigma.set(0.1f);
+            s_sigma.set(8);
+            // TODO: Compute estimates from the parameter values
+            histogram.estimate(z, -2, 16);
+            blurz.estimate(z, 0, 12);
+            blurx.estimate(z, 0, 12);
+            blury.estimate(z, 0, 12);
+            // Auto schedule the pipeline
+            Pipeline p(bilateral_grid);
+            p.auto_schedule(get_target());
+        } else if (get_target().has_gpu_feature()) {
             Var xi("xi"), yi("yi"), zi("zi");
 
             // Schedule blurz in 8x8 tiles. This is a tile in

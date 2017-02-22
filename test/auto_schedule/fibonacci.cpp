@@ -13,16 +13,14 @@ double run_test(bool auto_schedule) {
 
     g(x) = fib(x+10);
 
-    // Provide estimates for pipeline output
+    // Provide estimates on the pipeline output
     g.estimate(x, 0, 300);
 
-    // Auto schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(g);
 
-    if (!auto_schedule) {
-
-    } else {
+    if (auto_schedule) {
+        // Auto-schedule the pipeline
         p.auto_schedule(target);
     }
 

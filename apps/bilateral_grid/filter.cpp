@@ -3,6 +3,7 @@
 #include <cassert>
 
 #include "bilateral_grid.h"
+#include "bilateral_grid_auto_schedule.h"
 
 #include "benchmark.h"
 #include "HalideBuffer.h"
@@ -29,10 +30,23 @@ int main(int argc, char **argv) {
 
     // Timing code. Timing doesn't include copying the input data to
     // the gpu or copying the output back.
-    double min_t = benchmark(timing_iterations, 10, [&]() {
+
+    // Manually-tuned version
+    double min_t_manual = benchmark(timing_iterations, 10, [&]() {
         bilateral_grid(input, r_sigma, output);
     });
-    printf("Time: %gms\n", min_t * 1e3);
+    printf("Manually-tuned time: %gms\n", min_t_manual * 1e3);
+
+    // Auto-scheduled version
+    double min_t_auto = benchmark(timing_iterations, 10, [&]() {
+        bilateral_grid(input, r_sigma, output);
+    });
+    printf("Auto-scheduled time: %gms\n", min_t_auto * 1e3);
+
+    if (min_t_auto > min_t_manual * 1.5) {
+        printf("Auto-scheduler is much much slower than it should be.\n");
+        return -1;
+    }
 
     save_image(output, argv[2]);
 
