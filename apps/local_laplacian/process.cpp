@@ -42,5 +42,10 @@ int main(int argc, char **argv) {
 
     save_image(output, argv[6]);
 
+    if (best_auto > best_manual * 1.5) {
+        printf("Auto-scheduler is much much slower than it should be.\n");
+        return -1;
+    }
+
     return 0;
 }

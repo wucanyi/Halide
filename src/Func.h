@@ -1149,11 +1149,10 @@ public:
 
     /** Statically declare the range over which the function will be
      * evaluated in the general case. This provides a basis for the auto
-     * scheduler to make trade-offs and scheduling decisions. The estimates will
-     * be used in conjunction with bounds if they are specified. The auto
-     * generated schedules might break when the sizes of the dimensions are very
-     * different from the estimates specified. These estimates are used only
-     * by the auto scheduler.*/
+     * scheduler to make trade-offs and scheduling decisions. The auto
+     * generated schedules might break when the sizes of the dimensions are
+     * very different from the estimates specified. These estimates are used
+     * only by the auto scheduler if the function is a pipeline output. */
     EXPORT Func &estimate(Var var, Expr min, Expr extent);
 
     /** Expand the region computed so that the min coordinates is

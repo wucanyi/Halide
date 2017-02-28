@@ -46,7 +46,7 @@ class GetVarEstimates : public IRVisitor {
 
     void visit(const Variable *var) {
         if (var->param.defined() && !var->param.is_buffer() &&
-            var->param.has_estimate()) {
+            var->param.get_estimate().defined()) {
             var_estimates[var->param.name()] = var->param.get_estimate();
         }
     }
@@ -61,7 +61,7 @@ class SubstituteVarEstimates: public IRMutator {
 
     void visit(const Variable *var) {
         if (var->param.defined() && !var->param.is_buffer() &&
-            var->param.has_estimate()) {
+            var->param.get_estimate().defined()) {
             expr = var->param.get_estimate();
         } else {
             expr = var;

@@ -66,16 +66,17 @@ public:
         bilateral_grid(x, y) = interpolated(x, y, 0)/interpolated(x, y, 1);
 
         if (auto_schedule) {
-            // TODO: Provide estimates on the input image
-
+            // Provide estimates on the input image
+            input.dim(0).set_bounds_estimate(0, 1536);
+            input.dim(1).set_bounds_estimate(0, 2560);
             // Provide estimates on the parameters
-            r_sigma.set(0.1f);
-            s_sigma.set(8);
+            r_sigma.set_estimate(0.1f);
             // TODO: Compute estimates from the parameter values
             histogram.estimate(z, -2, 16);
             blurz.estimate(z, 0, 12);
             blurx.estimate(z, 0, 12);
             blury.estimate(z, 0, 12);
+            bilateral_grid.estimate(x, 0, 1536).estimate(y, 0, 2560);
             // Auto schedule the pipeline
             Pipeline p(bilateral_grid);
             p.auto_schedule(get_target());

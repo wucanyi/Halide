@@ -142,8 +142,8 @@ public:
     }
     // @}
 
-    void estimate(const T &value) {
-        param.estimate(value);
+    void set_estimate(const T &value) {
+        param.set_estimate(value);
     }
 
     /** You can use this parameter as an expression in a halide

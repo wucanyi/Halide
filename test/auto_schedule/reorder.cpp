@@ -115,12 +115,13 @@ double run_test_3(bool auto_schedule) {
     r(x, y, c) += f(x, y+1, search_area/2 + dom.x, search_area/2 + dom.y) *
                   f(x, y+2, search_area/2 + dom.x, search_area/2 + dom.y) * c;
 
-    r.estimate(x, 0, 1024).estimate(y, 0, 1024).estimate(c, 0, 3);
-
     Target target = get_target_from_environment();
     Pipeline p(r);
 
     if (auto_schedule) {
+        // Provide estimates on the pipeline output
+        r.estimate(x, 0, 1024).estimate(y, 0, 1024).estimate(c, 0, 3);
+        // Auto-schedule the pipeline
         p.auto_schedule(target);
     } else {
         Var par("par");

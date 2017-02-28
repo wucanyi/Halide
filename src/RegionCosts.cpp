@@ -19,10 +19,33 @@ namespace {
 // Visitor for keeping track of all input images accessed and their types.
 class FindImageInputs : public IRVisitor {
     using IRVisitor::visit;
+    set<string> seen_image_param;
 
     void visit(const Call *call) {
         if (call->call_type == Call::Image) {
             input_type[call->name] = call->type;
+
+            // Call to an ImageParam
+            if (call->param.defined() && (seen_image_param.find(call->name) == seen_image_param.end())) {
+                for (int i = 0; i < call->param.dimensions(); ++i) {
+                    const Expr &min = call->param.min_constraint_estimate(i);
+                    const Expr &extent = call->param.extent_constraint_estimate(i);
+
+                    user_assert(min.defined())
+                        << "AutoSchedule: Estimate of the min value of ImageParam \""
+                        << call->name << "\" in dimension " << i << " is not specified.\n";
+                    user_assert(extent.defined())
+                        << "AutoSchedule: Estimate of the extent value of ImageParam \""
+                        << call->name << "\" in dimension " << i << " is not specified.\n";
+
+                    string min_var = call->param.name() + ".min." + std::to_string(i);
+                    string extent_var = call->param.name() + ".extent." + std::to_string(i);
+
+                    input_estimates.emplace(min_var, Interval(min, min));
+                    input_estimates.emplace(extent_var, Interval(extent, extent));
+                    seen_image_param.insert(call->name);
+                }
+            }
         }
         for (size_t i = 0; i < call->args.size(); i++) {
             call->args[i].accept(this);
@@ -30,6 +53,7 @@ class FindImageInputs : public IRVisitor {
     }
 public:
     map<string, Type> input_type;
+    map<string, Interval> input_estimates;
 };
 
 // Visitor for tracking the arithmetic and memory costs.
@@ -190,11 +214,7 @@ int64_t get_func_value_size(const Function &f) {
 // boundary conditions better. The likely intrinsic triggers loop partitioning
 // and on average (steady stage) the cost of the expression will be equivalent
 // to the likely portion.
-//
-// TODO: Comment this out for now until we modify the compute cost functions
-// to account for likely exprs.
-/*class LikelyExpression : public IRMutator {
-    using IRMutator::mutate;
+class LikelyExpression : public IRMutator {
     using IRMutator::visit;
 
     void visit(const Min *op) {
@@ -229,7 +249,21 @@ int64_t get_func_value_size(const Function &f) {
             expr = op->false_value;
         }
     }
-};*/
+};
+
+Cost compute_expr_cost(Expr expr) {
+    Expr likely_expr = LikelyExpression().mutate(expr);
+    ExprCost cost_visitor;
+    likely_expr.accept(&cost_visitor);
+    return cost_visitor.cost;
+}
+
+map<string, int64_t> compute_expr_detailed_byte_loads(Expr expr) {
+    Expr likely_expr = LikelyExpression().mutate(expr);
+    ExprCost cost_visitor;
+    likely_expr.accept(&cost_visitor);
+    return cost_visitor.detailed_byte_loads;
+}
 
 } // anonymous namespace
 
@@ -238,11 +272,16 @@ RegionCosts::RegionCosts(const map<string, Function> &_env) : env(_env) {
         // Pre-compute the function costs without any inlining.
         func_cost[kv.first] = get_func_cost(kv.second);
 
+        // Get the types of all the image inputs to the pipeline, including
+        // their estimated min/extent values if applicable (i.e. if they are
+        // ImageParam).
         FindImageInputs find;
         kv.second.accept(&find);
-        // Get the types of all the image inputs to the pipeline.
         for (const auto &in : find.input_type) {
             inputs[in.first] = in.second;
+        }
+        for (const auto &iter : find.input_estimates) {
+            input_estimates.push(iter.first, iter.second);
         }
     }
 }
@@ -343,12 +382,8 @@ RegionCosts::stage_detailed_load_costs(string func, int stage,
         //inlined_expr = LikelyExpression().mutate(inlined_expr);
         inlined_expr = simplify(inlined_expr);
 
-        ExprCost cost_visitor;
-        inlined_expr.accept(&cost_visitor);
-        const map<string, int64_t> &expr_load_costs = cost_visitor.detailed_byte_loads;
-
+        map<string, int64_t> expr_load_costs = compute_expr_detailed_byte_loads(inlined_expr);
         combine_load_costs(load_costs, expr_load_costs);
-
         load_costs[func] += e.type().bytes();
     }
 
@@ -465,10 +500,9 @@ Cost RegionCosts::get_func_stage_cost(const Function &f, int stage, const set<st
         //inlined_expr = LikelyExpression().mutate(inlined_expr);
         inlined_expr = simplify(inlined_expr);
 
-        ExprCost cost_visitor;
-        inlined_expr.accept(&cost_visitor);
-        cost.arith += cost_visitor.cost.arith;
-        cost.memory += cost_visitor.cost.memory;
+        Cost expr_cost = compute_expr_cost(inlined_expr);
+        cost.arith += expr_cost.arith;
+        cost.memory += expr_cost.memory;
 
         // Accounting for the store
         cost.memory += e.type().bytes();
@@ -482,10 +516,9 @@ Cost RegionCosts::get_func_stage_cost(const Function &f, int stage, const set<st
             //inlined_arg = LikelyExpression().mutate(inlined_arg);
             inlined_arg = simplify(inlined_arg);
 
-            ExprCost cost_visitor;
-            inlined_arg.accept(&cost_visitor);
-            cost.arith += cost_visitor.cost.arith;
-            cost.memory += cost_visitor.cost.memory;
+            Cost expr_cost = compute_expr_cost(inlined_arg);
+            cost.arith += expr_cost.arith;
+            cost.memory += expr_cost.memory;
         }
     }
 
@@ -617,6 +650,32 @@ void RegionCosts::disp_func_costs() {
         }
     }
     debug(0) << "===========================" << '\n';
+}
+
+bool is_func_trivial_to_inline(const Function &func) {
+    if (!func.can_be_inlined()) {
+        return false;
+    }
+
+    // For multi-dimensional tuple, we want to take the max over the arithmetic
+    // and memory cost separately for conservative estimate.
+
+    Cost inline_cost(0, 0);
+    for (const auto &val : func.values()) {
+        Cost cost = compute_expr_cost(val);
+        inline_cost.arith = std::max(cost.arith, inline_cost.arith);
+        inline_cost.memory = std::max(cost.memory, inline_cost.memory);
+    }
+
+    // Compute the cost if we were to call the function instead of inline it
+    Cost call_cost(0, 0);
+    call_cost.arith = 1;
+    for (const auto &type : func.output_types()) {
+        call_cost.memory = std::max((int64_t)type.bytes(), call_cost.memory);
+    }
+
+    bool is_trivial = (call_cost.arith + call_cost.memory) >= (inline_cost.arith + inline_cost.memory);
+    return is_trivial;
 }
 
 }

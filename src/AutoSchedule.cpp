@@ -72,42 +72,25 @@ struct FStage {
     }
 };
 
-// Helper function to set the compute and store level of all function
-// stages in the environment as root.
-void set_schedule_defaults(map<string, Function> &env) {
-    for (auto &kv : env) {
-        kv.second.schedule().store_level() = LoopLevel::root();
-        kv.second.schedule().compute_level() = LoopLevel::root();
-
-        // Set the schedule for each update definition.
-        for (size_t u = 0; u < kv.second.updates().size(); u++) {
-            kv.second.update_schedule(u).store_level() = LoopLevel::root();
-            kv.second.update_schedule(u).compute_level() = LoopLevel::root();
-        }
-    }
-}
-
-// Return true if all the pipeline outputs have estimates specified
-// on each of their dimensions.
-bool check_estimates_on_outputs(const vector<Function> &outputs) {
-    bool estimates_avail = true;
+// Check if all the pipeline outputs have estimates specified
+// on each of their dimensions; otherwise, throw an assertion.
+void check_estimates_on_outputs(const vector<Function> &outputs) {
     for (const auto &out : outputs) {
         const vector<Bound> &estimates = out.schedule().estimates();
         if (estimates.size() != out.args().size()) {
-            estimates_avail = false;
-            break;
+            user_error << "Please provide estimate for each dimension of \""
+                       << out.name() << "\"\n";
         }
         const vector<string> &vars = out.args();
         // Check if the estimate for each dimension is available and it is an integer.
         for (uint32_t i = 0; i < estimates.size(); i++) {
             if ((std::find(vars.begin(), vars.end(), estimates[i].var) == vars.end()) ||
                 !(estimates[i].min.as<IntImm>() && estimates[i].extent.as<IntImm>())) {
-                estimates_avail = false;
-                break;
+                user_error << "Please provide estimate for dimension " << i
+                           << " of \"" << out.name() << "\"\n";
             }
         }
     }
-    return estimates_avail;
 }
 
 struct DependenceAnalysis {
@@ -129,7 +112,8 @@ struct DependenceAnalysis {
     map<string, Box> regions_required(Function f, int stage_num,
                                       const DimBounds &bounds,
                                       const set<string> &prods,
-                                      bool only_regions_computed);
+                                      bool only_regions_computed,
+                                      const Scope<Interval> *input_estimates);
 
     // Return the regions of the producers ('prods') required to compute the region
     // of the function specified by 'pure_bounds'. When 'only_regions_computed'
@@ -138,7 +122,8 @@ struct DependenceAnalysis {
     map<string, Box> regions_required(Function f,
                                       const DimBounds &pure_bounds,
                                       const set<string> &prods,
-                                      bool only_regions_computed);
+                                      bool only_regions_computed,
+                                      const Scope<Interval> *input_estimates);
 
     // Return redundantly computed regions of producers ('prods') while computing
     // a region of the function stage ('f', 'stage_num') specified by 'bounds'.
@@ -150,13 +135,15 @@ struct DependenceAnalysis {
     map<string, Box> redundant_regions(Function f, int stage_num, string var,
                                        const DimBounds &bounds,
                                        const set<string> &prods,
-                                       bool only_regions_computed);
+                                       bool only_regions_computed,
+                                       const Scope<Interval> *input_estimates);
 
     // Return overlapping regions of producers ('prods') while computing a function
     // stage along each of the dimensions.
     vector<map<string, Box>>
     overlap_regions(Function f, int stage_num, const DimBounds &bounds,
-                    const set<string> &prods, bool only_regions_computed);
+                    const set<string> &prods, bool only_regions_computed,
+                    const Scope<Interval> *input_estimates);
 };
 
 // Return the regions of the producers ('prods') required to compute the region
@@ -164,14 +151,15 @@ struct DependenceAnalysis {
 map<string, Box>
 DependenceAnalysis::regions_required(Function f, const DimBounds &pure_bounds,
                                      const set<string> &prods,
-                                     bool only_regions_computed) {
+                                     bool only_regions_computed,
+                                     const Scope<Interval> *input_estimates) {
     // Find the regions required for each stage and merge them.
     map<string, Box> regions;
     int num_stages = f.updates().size() + 1;
     for (int s = 0; s < num_stages; s++) {
         DimBounds bounds = get_stage_bounds(f, s, pure_bounds);
         map<string, Box> stage_regions =
-            regions_required(f, s, bounds, prods, only_regions_computed);
+            regions_required(f, s, bounds, prods, only_regions_computed, input_estimates);
 
         merge_regions(regions, stage_regions);
     }
@@ -253,7 +241,8 @@ map<string, Box>
 DependenceAnalysis::regions_required(Function f, int stage_num,
                                      const DimBounds &bounds,
                                      const set<string> &prods,
-                                     bool only_regions_computed) {
+                                     bool only_regions_computed,
+                                     const Scope<Interval> *input_estimates) {
     // Iteratively compute the required regions by traversing the chain
     // of dependencies.
 
@@ -273,6 +262,7 @@ DependenceAnalysis::regions_required(Function f, int stage_num,
         Definition def = get_stage_definition(s.func, s.stage_num);
         // Scope for containing all the estimates on parameters and intervals.
         Scope<Interval> curr_scope;
+        curr_scope.set_containing_scope(input_estimates);
 
         const vector<Dim> &dims = def.schedule().dims();
 
@@ -431,11 +421,12 @@ map<string, Box>
 DependenceAnalysis::redundant_regions(Function f, int stage_num, string var,
                                       const DimBounds &bounds,
                                       const set<string> &prods,
-                                      bool only_regions_computed) {
+                                      bool only_regions_computed,
+                                      const Scope<Interval> *input_estimates) {
     // Find the regions required to compute the region of 'f' specified
     // by 'bounds'.
-    map<string, Box> regions = regions_required(f, stage_num, bounds,
-                                                prods, only_regions_computed);
+    map<string, Box> regions = regions_required(
+        f, stage_num, bounds, prods, only_regions_computed, input_estimates);
 
     // Shift the bounds by the size of the interval along the direction
     // of var.
@@ -453,8 +444,8 @@ DependenceAnalysis::redundant_regions(Function f, int stage_num, string var,
 
     // Find the regions required to compute the region of f specified
     // by shifted_bounds.
-    map<string, Box> regions_shifted = regions_required(f, stage_num, shifted_bounds,
-                                                        prods, only_regions_computed);
+    map<string, Box> regions_shifted = regions_required(
+        f, stage_num, shifted_bounds, prods, only_regions_computed, input_estimates);
 
     // Compute the overlaps between 'regions_shifted' and the original
     // regions required.
@@ -496,7 +487,8 @@ vector<map<string, Box>>
 DependenceAnalysis::overlap_regions(Function f, int stage_num,
                                     const DimBounds &bounds,
                                     const set<string> &prods,
-                                    bool only_regions_computed) {
+                                    bool only_regions_computed,
+                                    const Scope<Interval> *input_estimates) {
     vector<map<string, Box>> conc_overlaps;
 
     Definition def = get_stage_definition(f, stage_num);
@@ -505,7 +497,7 @@ DependenceAnalysis::overlap_regions(Function f, int stage_num,
     // Get the redundant regions along each dimension of f.
     for (int d = 0; d < (int)dims.size() - 1; d++) {
         map<string, Box> conc_reg = redundant_regions(f, stage_num, dims[d].var, bounds,
-                                                      prods, only_regions_computed);
+                                                      prods, only_regions_computed, input_estimates);
         conc_overlaps.push_back(conc_reg);
     }
     return conc_overlaps;
@@ -514,7 +506,8 @@ DependenceAnalysis::overlap_regions(Function f, int stage_num,
 // Return the regions of each function required for computing the
 // outputs of the pipeline.
 map<string, Box> get_pipeline_bounds(DependenceAnalysis &analysis,
-                                     const vector<Function> &outputs) {
+                                     const vector<Function> &outputs,
+                                     const Scope<Interval> *input_estimates) {
     map<string, Box> pipeline_bounds;
 
     // Find the regions required for each of the outputs and merge them
@@ -547,7 +540,8 @@ map<string, Box> get_pipeline_bounds(DependenceAnalysis &analysis,
             prods.insert(fpair.first);
         }
 
-        map<string, Box> regions = analysis.regions_required(out, pure_bounds, prods, false);
+        map<string, Box> regions = analysis.regions_required(out, pure_bounds, prods,
+                                                             false, input_estimates);
 
         // Add the output region to the pipeline bounds as well.
         regions.emplace(out.name(), out_box);
@@ -1100,7 +1094,8 @@ map<string, int64_t> Partitioner::evaluate_reuse(const FStage &stg,
     DimBounds bounds = get_bounds_from_tile_sizes(stg, tile_sizes);
 
     vector<map<string, Box>> reuse_regions =
-        dep_analysis.overlap_regions(stg.func, stg.stage_num, bounds, prods, false);
+        dep_analysis.overlap_regions(stg.func, stg.stage_num, bounds, prods,
+                                     false, &costs.input_estimates);
 
     for (size_t d = 0; d < dims.size() - 1; d++) {
         int64_t total_reuse = 0;
@@ -1382,9 +1377,6 @@ void Partitioner::group(Partitioner::Level level) {
         debug(3) << "Current grouping candidates:" << '\n';
         debug(3) << "============================" << '\n';
         for (size_t i = 0; i < cand.size(); ++i) {
-            if (i > 0) {
-                debug(3) << ", ";
-            }
             debug(3) << "{" << cand[i].first << ", " << cand[i].second << "}" << '\n';
         }
 
@@ -1563,10 +1555,10 @@ Partitioner::GroupAnalysis Partitioner::analyze_group(const Group &g, bool show_
     DimBounds tile_bounds = get_bounds_from_tile_sizes(g.output, g.tile_sizes);
 
     map<string, Box> alloc_regions = dep_analysis.regions_required(
-        g.output.func, g.output.stage_num, tile_bounds, group_members, false);
+        g.output.func, g.output.stage_num, tile_bounds, group_members, false, &costs.input_estimates);
 
     map<string, Box> compute_regions = dep_analysis.regions_required(
-        g.output.func, g.output.stage_num, tile_bounds, group_members, true);
+        g.output.func, g.output.stage_num, tile_bounds, group_members, true, &costs.input_estimates);
 
     map<string, Box> group_reg, prod_reg, input_reg;
 
@@ -1969,7 +1961,7 @@ map<FStage, map<string, Box>> Partitioner::group_storage_bounds() {
 
         map<string, Box> reg_alloc =
             dep_analysis.regions_required(g.output.func, g.output.stage_num,
-                                          bounds, prods, false);
+                                          bounds, prods, false, &costs.input_estimates);
         map<string, Box> group_alloc;
         for (const FStage &s : g.members) {
             const auto &iter = reg_alloc.find(s.func.name());
@@ -1999,7 +1991,7 @@ map<FStage, map<FStage, DimBounds>> Partitioner::group_loop_bounds() {
 
         map<string, Box> reg_computed =
             dep_analysis.regions_required(g.output.func, g.output.stage_num,
-                                          bounds, prods, true);
+                                          bounds, prods, true, &costs.input_estimates);
 
         for (const FStage &s : g.members) {
             const auto &iter = reg_computed.find(s.func.name());
@@ -2693,6 +2685,10 @@ void validate_no_partial_schedules(const Function &f) {
         const Definition &def = get_stage_definition(f, stage);
         const Schedule &schedule = def.schedule();
 
+        // Verify no compute_root, splits, or bounds are specified
+        user_assert(schedule.compute_level().is_inline())
+            << "AutoSchedule: cannot auto-schedule function \"" << f.name()
+            << "\" since it is scheduled to be computed at root\n";
         user_assert(schedule.splits().empty())
             << "AutoSchedule: cannot auto-schedule function \"" << f.name()
             << "\" since it has partially specified schedules at stage " << stage << "\n";
@@ -2802,21 +2798,7 @@ string generate_schedules(const vector<Function> &outputs, const Target &target,
     // The auto scheduling algorithm requires estimates on the outputs of the
     // pipeline to get quantitative estimates of costs for computing functions
     // in the pipeline.
-    bool estimates_avail = check_estimates_on_outputs(outputs);
-    if (!estimates_avail) {
-        user_warning << "Please provide estimates for each dimension "
-                     << "of the pipeline output functions.\n";
-
-        // Compute all the pipeline stages at root and store them at root.
-        set_schedule_defaults(env);
-        return "";
-    }
-
-    DependenceAnalysis dep_analysis(env, func_val_bounds);
-
-    // Compute bounds of all functions in the pipeline given estimates on
-    // outputs. Also report functions which bounds could not be inferred.
-    map<string, Box> pipeline_bounds = get_pipeline_bounds(dep_analysis, outputs);
+    check_estimates_on_outputs(outputs);
 
     // Initialize the cost model.
     // Compute the expression costs for each function in the pipeline.
@@ -2824,6 +2806,13 @@ string generate_schedules(const vector<Function> &outputs, const Target &target,
     if (debug::debug_level() >= 3) {
         costs.disp_func_costs();
     }
+
+    DependenceAnalysis dep_analysis(env, func_val_bounds);
+
+    // Compute bounds of all functions in the pipeline given estimates on
+    // outputs. Also report functions which bounds could not be inferred.
+    map<string, Box> pipeline_bounds =
+        get_pipeline_bounds(dep_analysis, outputs, &costs.input_estimates);
 
     Partitioner part(pipeline_bounds, arch_params, dep_analysis, costs, outputs);
 

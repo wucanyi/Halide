@@ -57,6 +57,10 @@ int main(int argc, char **argv) {
     // Provide estimates on the pipeline output
     g.estimate(x, 0, 1000).estimate(y, 0, 1000);
 
+    // Provide estimates on the ImageParam
+    input.dim(0).set_bounds_estimate(0, 1000);
+    input.dim(1).set_bounds_estimate(0, 1000);
+
     // Auto-schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(g);

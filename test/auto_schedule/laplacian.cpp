@@ -151,6 +151,7 @@ double run_test(bool auto_schedule) {
     Pipeline p(output);
 
     if (!auto_schedule) {
+        remap.compute_root();
         if (target.has_gpu_feature()) {
             // gpu schedule
             output.compute_root().gpu_tile(x, y, 16, 8);

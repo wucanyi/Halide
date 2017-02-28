@@ -19,6 +19,8 @@ struct ParameterContents {
     Expr min_constraint[4];
     Expr extent_constraint[4];
     Expr stride_constraint[4];
+    Expr min_constraint_estimate[4];
+    Expr extent_constraint_estimate[4];
     Expr min_value, max_value;
     Expr estimate;
 
@@ -219,6 +221,19 @@ void Parameter::set_stride_constraint(int dim, Expr e) {
     check_dim_ok(dim);
     contents->stride_constraint[dim] = e;
 }
+
+void Parameter::set_min_constraint_estimate(int dim, Expr min) {
+    check_is_buffer();
+    check_dim_ok(dim);
+    contents->min_constraint_estimate[dim] = min;
+}
+
+void Parameter::set_extent_constraint_estimate(int dim, Expr extent) {
+    check_is_buffer();
+    check_dim_ok(dim);
+    contents->extent_constraint_estimate[dim] = extent;
+}
+
 void Parameter::set_host_alignment(int bytes) {
     check_is_buffer();
     contents->host_alignment = bytes;
@@ -241,6 +256,19 @@ Expr Parameter::stride_constraint(int dim) const {
     check_dim_ok(dim);
     return contents->stride_constraint[dim];
 }
+
+Expr Parameter::min_constraint_estimate(int dim) const {
+    check_is_buffer();
+    check_dim_ok(dim);
+    return contents->min_constraint_estimate[dim];
+}
+
+Expr Parameter::extent_constraint_estimate(int dim) const {
+    check_is_buffer();
+    check_dim_ok(dim);
+    return contents->extent_constraint_estimate[dim];
+}
+
 int Parameter::host_alignment() const {
     check_is_buffer();
     return contents->host_alignment;
@@ -279,14 +307,9 @@ Expr Parameter::get_max_value() const {
     return contents->max_value;
 }
 
-void Parameter::estimate(Expr e) {
+void Parameter::set_estimate(Expr e) {
     check_is_scalar();
     contents->estimate = e;
-}
-
-bool Parameter::has_estimate() const {
-    check_is_scalar();
-    return contents->estimate.defined();
 }
 
 Expr Parameter::get_estimate() const {
@@ -320,6 +343,14 @@ Expr Dimension::max() const {
     return min() + extent() - 1;
 }
 
+Expr Dimension::min_estimate() const {
+    return param.min_constraint_estimate(d);
+}
+
+Expr Dimension::extent_estimate() const {
+    return param.extent_constraint_estimate(d);
+}
+
 Expr Dimension::stride() const {
     std::ostringstream s;
     s << param.name() << ".stride." << d;
@@ -341,9 +372,22 @@ Dimension Dimension::set_stride(Expr stride) {
     return *this;
 }
 
-
 Dimension Dimension::set_bounds(Expr min, Expr extent) {
     return set_min(min).set_extent(extent);
+}
+
+Dimension Dimension::set_min_estimate(Expr min) {
+    param.set_min_constraint_estimate(d, min);
+    return *this;
+}
+
+Dimension Dimension::set_extent_estimate(Expr stride) {
+    param.set_extent_constraint_estimate(d, stride);
+    return *this;
+}
+
+Dimension Dimension::set_bounds_estimate(Expr min, Expr extent) {
+    return set_min_estimate(min).set_extent_estimate(extent);
 }
 
 Dimension Dimension::dim(int i) {

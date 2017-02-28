@@ -16,6 +16,10 @@ void run_test_1() {
     // Provide estimates on the pipeline output
     g.estimate(x, 0, 1000).estimate(y, 0, 1000);
 
+    // Provide estimates on the ImageParam
+    input.dim(0).set_bounds_estimate(0, 1000);
+    input.dim(1).set_bounds_estimate(0, 1000);
+
     // Auto-schedule the pipeline
     Target target = get_target_from_environment();
     Pipeline p(g);
@@ -28,7 +32,7 @@ void run_test_1() {
 
 void run_test_2() {
     Param<int> offset;
-    offset.estimate(1);
+    offset.set_estimate(1);
     ImageParam input(UInt(8), 2);
     Var x("x"), y("y");
     Func f("f");
@@ -39,6 +43,10 @@ void run_test_2() {
 
     // Provide estimates on the pipeline output
     g.estimate(x, 0, 1000).estimate(y, 0, 1000);
+
+    // Provide estimates on the ImageParam
+    input.dim(0).set_bounds_estimate(0, 1000);
+    input.dim(1).set_bounds_estimate(0, 1000);
 
     // Auto-schedule the pipeline
     Target target = get_target_from_environment();

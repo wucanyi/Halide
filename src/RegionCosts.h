@@ -11,6 +11,8 @@
 #include <limits>
 
 #include "AutoScheduleUtils.h"
+#include "Interval.h"
+#include "Scope.h"
 
 namespace Halide {
 namespace Internal {
@@ -36,6 +38,9 @@ struct RegionCosts {
     std::map<std::string, std::vector<Cost>> func_cost;
     /** A map containing the types of all image inputs in the pipeline. */
     std::map<std::string, Type> inputs;
+    /** A scope containing the estimated min/extent values of ImageParams
+     * in the pipeline. */
+    Scope<Interval> input_estimates;
 
     /** Return the cost of producing a region (specified by 'bounds') of a
      * function stage (specified by 'func' and 'stage'). 'inlines' specifies
@@ -119,6 +124,10 @@ struct RegionCosts {
      * functions in the pipeline.*/
     RegionCosts(const std::map<std::string, Function> &env);
 };
+
+/** Return true if the cost of inlining a function is equivalent to the
+ * cost of calling the function directly. */
+bool is_func_trivial_to_inline(const Function &func);
 
 }
 }
