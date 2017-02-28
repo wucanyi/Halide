@@ -214,7 +214,10 @@ int64_t get_func_value_size(const Function &f) {
 // boundary conditions better. The likely intrinsic triggers loop partitioning
 // and on average (steady stage) the cost of the expression will be equivalent
 // to the likely portion.
-class LikelyExpression : public IRMutator {
+//
+// TODO: Comment this out for now until we modify the compute expr cost and
+// detailed byte loads functions to account for likely exprs.
+/*class LikelyExpression : public IRMutator {
     using IRMutator::visit;
 
     void visit(const Min *op) {
@@ -249,19 +252,21 @@ class LikelyExpression : public IRMutator {
             expr = op->false_value;
         }
     }
-};
+};*/
 
 Cost compute_expr_cost(Expr expr) {
-    Expr likely_expr = LikelyExpression().mutate(expr);
+    // TODO: Handle likely
+    //expr = LikelyExpression().mutate(expr);
     ExprCost cost_visitor;
-    likely_expr.accept(&cost_visitor);
+    expr.accept(&cost_visitor);
     return cost_visitor.cost;
 }
 
 map<string, int64_t> compute_expr_detailed_byte_loads(Expr expr) {
-    Expr likely_expr = LikelyExpression().mutate(expr);
+    // TODO: Handle likely
+    //expr = LikelyExpression().mutate(expr);
     ExprCost cost_visitor;
-    likely_expr.accept(&cost_visitor);
+    expr.accept(&cost_visitor);
     return cost_visitor.detailed_byte_loads;
 }
 
@@ -378,8 +383,6 @@ RegionCosts::stage_detailed_load_costs(string func, int stage,
 
     for (const auto &e : def.values()) {
         Expr inlined_expr = perform_inline(e, env, inlines);
-        // TODO: Handle likely.
-        //inlined_expr = LikelyExpression().mutate(inlined_expr);
         inlined_expr = simplify(inlined_expr);
 
         map<string, int64_t> expr_load_costs = compute_expr_detailed_byte_loads(inlined_expr);
@@ -496,8 +499,6 @@ Cost RegionCosts::get_func_stage_cost(const Function &f, int stage, const set<st
 
     for (const auto &e : def.values()) {
         Expr inlined_expr = perform_inline(e, env, inlines);
-        // TODO: Handle likely.
-        //inlined_expr = LikelyExpression().mutate(inlined_expr);
         inlined_expr = simplify(inlined_expr);
 
         Cost expr_cost = compute_expr_cost(inlined_expr);
@@ -512,8 +513,6 @@ Cost RegionCosts::get_func_stage_cost(const Function &f, int stage, const set<st
     if (!f.is_pure()) {
         for (const auto &arg : def.args()) {
             Expr inlined_arg = perform_inline(arg, env, inlines);
-            // TODO: Handle likely.
-            //inlined_arg = LikelyExpression().mutate(inlined_arg);
             inlined_arg = simplify(inlined_arg);
 
             Cost expr_cost = compute_expr_cost(inlined_arg);
