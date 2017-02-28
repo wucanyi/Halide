@@ -1,6 +1,6 @@
-// Halide tutorial lesson 19: Staging Func or ImageParam
+// Halide tutorial lesson 19: Staging a Func or an ImageParam
 
-// This lesson demonstrates how to use Func::in() and ImageParam::in() to
+// This lesson demonstrates how to use Func::in and ImageParam::in to
 // schedule a Func differently in different places and to stage loads from
 // a Func or an ImageParam.
 
@@ -31,9 +31,96 @@ int main(int argc, char **argv) {
     Var x("x"), y("y");
 
     // This lesson will be about "wrapping" a Func or an ImageParam using the
-    // Func::in() and ImageParam::in() directives, which may be useful for
-    // variety of use cases.
+    // Func::in and ImageParam::in directives
 
+    {
+        // Consider the following pipeline:
+        Func f("f"), g("g"), h("h");
+        f(x, y) = x + y;
+        g(x, y) = x * y * f(x, y);
+        h(x, y) = 2 + f(x, y);
+        f.compute_root();
+        g.compute_root();
+        h.compute_root();
+        // which is equivalent to the following loop nests:
+        // for y:
+        //   for x:
+        //     f(x, y) = x + y
+        // for y:
+        //   for x:
+        //     g(x, y) = x * y * f(x, y)
+        // for y:
+        //   for x:
+        //     h(x, y) = 2 + f(x, y)
+
+        // Now, let's do the following:
+        Func f_in_g = f.in(g);
+        f_in_g.compute_root();
+        // Equivalently, we could also chain the schedules like so:
+        // f.in(g).compute_root();
+    }
+
+    {
+        // f.in(g) replaces all calls to 'f' inside 'g' with a unique wrapper
+        // Func and then returns that wrapper. Essentially, it rewrites the
+        // original pipeline above into the following:
+        Func f_in_g("f_in_g"), f("f"), g("g"), h("h");
+        f(x, y) = x + y;
+        f_in_g(x, y) = f(x, y);
+        g(x, y) = x * y * f_in_g(x, y);
+        h(x, y) = 2 + f(x, y);
+        f.compute_root();
+        g.compute_root();
+        h.compute_root();
+        // which is equivalent to the following loop nests:
+        // for y:
+        //   for x:
+        //     f(x, y) = x + y
+        // for y:
+        //   for x:
+        //     f_in_g(x, y) = f(x, y)
+        // for y:
+        //   for x:
+        //     g(x, y) = x * y * f_in_g(x, y)
+        // for y:
+        //   for x:
+        //     h(x, y) = 2 + f(x, y)
+
+        // Note that only calls to 'f' inside 'g' are replaced. The ones inside
+        // 'h' remain unchanged.
+    }
+
+    {
+        Func f("f"), g("g"), h("h");
+        f(x, y) = x + y;
+        g(x, y) = x * y * f(x, y);
+        h(x, y) = 2 + f(x, y);
+        f.compute_root();
+        g.compute_root();
+        h.compute_root();
+        // If we want to replace all calls to 'f' inside all functions in the
+        // pipeline with calls to the wrapper, we could do it like so:
+        f.in().compute_root();
+        // This will create and return a global wrapper. All calls to 'f' inside
+        // 'g' and 'h' will be replaced with calls to this global wrapper.
+
+        // The equivalent loop nests are the following:
+        // for y:
+        //   for x:
+        //     f(x, y) = x + y
+        // for y:
+        //   for x:
+        //     f_global_wrapper(x, y) = f(x, y)
+        // for y:
+        //   for x:
+        //     g(x, y) = x * y * f_global_wrapper(x, y)
+        // for y:
+        //   for x:
+        //     h(x, y) = 2 + f_global_wrapper(x, y)
+    }
+
+
+    // Func::in and ImageParam::in can be used for variety of scheduling tricks.
     {
         // Say we have the following pipeline:
         Func g("g"), f1("f1"), f2("f2");
@@ -43,12 +130,11 @@ int main(int argc, char **argv) {
         // and we want to schedule 'g' differently depending on whether it is
         // used by 'f1' or 'f2': in 'f1', we want to vectorize 'g' across the
         // x dimension, while in 'f2', we want to parallelize it. It is possible
-        // to do this in Halide using the in() directive.
+        // to do this in Halide using the in directive.
 
-        // g.in(f1) returns a Func that wraps all calls of 'g' inside 'f1',
-        // i.e. all calls to 'g' by 'f1' are replaced with calls to this wrapper.
-        // Then, we schedule the wrapper to be computed at 'f1' and vectorize it
-        // across the x dimension:
+        // g.in(f1) replaces all calls to 'g' inside 'f1' with a unique wrapper
+        // Func and then returns that wrapper. Then, we schedule the wrapper to
+        // be computed at 'f1' and vectorize it across the x dimension:
         g.in(f1).compute_at(f1, y).vectorize(x, 8);
 
         // Similarly, to parallelize 'g' across the x dimension inside 'f2', we
@@ -61,25 +147,25 @@ int main(int argc, char **argv) {
         // The equivalent C is:
         int c_result_f1[40][40];
         for (int f1_y = 0; f1_y < 40; f1_y++) {
-            int g_wrapper[40];
+            int g_in_f1[40];
             for (int g_x_o = 0; g_x_o < 5; g_x_o++) {
-                for (int g_x_i = 0; g_x_i < 8; g_x_i++) {
-                    g_wrapper[8 * g_x_o + g_x_i] = 8 * g_x_o + g_x_i + f1_y;
+                /* vectorized */ for (int g_x_i = 0; g_x_i < 8; g_x_i++) {
+                    g_in_f1[8 * g_x_o + g_x_i] = 8 * g_x_o + g_x_i + f1_y;
                 }
             }
             for (int f1_x = 0; f1_x < 40; f1_x++) {
-                c_result_f1[f1_y][f1_x] = f1_x * f1_y * g_wrapper[f1_x];
+                c_result_f1[f1_y][f1_x] = f1_x * f1_y * g_in_f1[f1_x];
             }
         }
 
         int c_result_f2[40][40];
         for (int f2_y = 0; f2_y < 40; f2_y++) {
-            int g_wrapper[40];
+            int g_in_f2[40];
             /* parallel */ for (int g_x = 0; g_x < 40; g_x++) {
-                g_wrapper[g_x] = g_x + f2_y;
+                g_in_f2[g_x] = g_x + f2_y;
             }
             for (int f2_x = 0; f2_x < 40; f2_x++) {
-                c_result_f2[f2_y][f2_x] = f2_x - f2_y + g_wrapper[f2_x];
+                c_result_f2[f2_y][f2_x] = f2_x - f2_y + g_in_f2[f2_x];
             }
         }
 
@@ -105,7 +191,7 @@ int main(int argc, char **argv) {
     }
 
     {
-        // Func::in() is useful to stage loads from a Func via some intermediate
+        // Func::in is useful to stage loads from a Func via some intermediate
         // buffer (perhaps on the stack or in shared GPU memory).
 
         // Let's say 'f' is really expensive to compute and used in several
@@ -117,7 +203,7 @@ int main(int argc, char **argv) {
         g(x, y) = 2 * f(y, x);
         // First, compute 'f' at root.
         f.compute_root();
-        // Then, we use Func::in() to stage the loads from 'f' in tiles
+        // Then, we use Func::in to stage the loads from 'f' in tiles
         // as necessary:
         Var xi("xi"), yi("yi");
         g.tile(x, y, xi, yi, 8, 8);
@@ -136,15 +222,15 @@ int main(int argc, char **argv) {
         int c_result[40][40];
         for (int y = 0; y < 40; y++) {
             for (int x = 0; x < 40; x++) {
-                int f_wrapper[8][8];
+                int f_in_g[8][8];
                 for (int yi = 0; yi < 8; yi++) {
                     for (int xi = 0; xi < 8; xi++) {
-                        f_wrapper[y][x] = f_buffer[y][x];
+                        f_in_g[y][x] = f_buffer[y][x];
                     }
                 }
                 for (int yi = 0; yi < 8; yi++) {
                     for (int xi = 0; xi < 8; xi++) {
-                        c_result[y][x] = 2 * f_wrapper[y][x];
+                        c_result[y][x] = 2 * f_in_g[y][x];
                     }
                 }
             }
@@ -163,15 +249,15 @@ int main(int argc, char **argv) {
     }
 
     {
-        // Func::in() can also be used to group multiple stages of a Func
-        // in the same loopness. Consider the following code:
+        // Func::in can also be used to group multiple stages of a Func
+        // in the same loop nest. Consider the following code:
         Func f("f"), g("g");
         f(x, y) = x + y;
         f(x, y) += x - y;
         g(x, y) = x * y * f(x, y);
 
         // When we schedule 'f' to be computed at root (by calling f.compute_root()),
-        // all its stages are computed at separate loopness:
+        // all its stages are computed at separate loop nest:
         // for y:
         //   for x:
         //     f(x, y) = x + y
@@ -182,25 +268,37 @@ int main(int argc, char **argv) {
         //   for x:
         //     g(x, y) = x * y * f(x, y)
 
-        // We can use Func::in() to group those stages to be computed at the
-        // same loopness like so:
+        // We can use Func::in to group those stages to be computed at the
+        // same loop nest like so:
         f.in(g).compute_root();
+        // f.in(g) replaces all calls to 'f' inside 'g' with a unique wrapper
+        // Func and then returns that wrapper, which is then scheduled to
+        // be computed at root. By default, Func is computed inline, or if it
+        // has updates, all of its stages will be computed at the innermost
+        // loop of its consumer. In this case, all stages of 'f' will be
+        // computed within the innermost loop of its wrapper, generating the
+        // following loop nests:
+        // for y:
+        //   for x:
+        //     f(x, y) = x + y
+        //     f(x, y) += x - y
+        //     f_in_g(x, y) = f(x, y)
 
         Buffer<int> halide_result = g.realize(20, 20);
 
         // The equivalent C is:
-        int f_wrapper[20][20];
+        int f_in_g[20][20];
         for (int y = 0; y < 20; y++) {
             for (int x = 0; x < 20; x++) {
                 int f = x + y;
                 f += x - y;
-                f_wrapper[y][x] = f;
+                f_in_g[y][x] = f;
             }
         }
         int c_result_g[20][20];
         for (int y = 0; y < 20; y++) {
             for (int x = 0; x < 20; x++) {
-                c_result_g[y][x] = x * y * f_wrapper[y][x];
+                c_result_g[y][x] = x * y * f_in_g[y][x];
             }
         }
 
@@ -217,11 +315,11 @@ int main(int argc, char **argv) {
     }
 
     {
-        // ImageParam::in() behaves the same way as Func::in(). We can also
-        // use ImageParam::in() to stage loads from an ImageParam via some
+        // ImageParam::in behaves the same way as Func::in. We can also
+        // use ImageParam::in to stage loads from an ImageParam via some
         // intermediate buffer (e.g. on the stack or in shared GPU memory).
 
-        // The following example illustrates how you would use ImageParam::in()
+        // The following example illustrates how you would use ImageParam::in
         // to stage loads from an ImageParam in tiles.
         ImageParam img(Int(32), 2, "img");
         Func f("f");
@@ -236,8 +334,10 @@ int main(int argc, char **argv) {
         // If, for some reason, we want to unroll the first dimension of the
         // wrapper by 2, we can do the following:
         img_wrapper.unroll(_0, 2);
-        // Note that we use implicit variables to name the dimensions of the image
-        // wrapper: _0 as the 1st dimension, _1 as the 2nd dimension, and so on.
+        // Note that since, unlike Func::in, anonymous wrapper Func created by
+        // ImageParam::in does not have any explicitly named variables, we use
+        // implicit variables to name the dimensions of the image wrapper:
+        // _0 as the 1st dimension, _1 as the 2nd dimension, and so on.
 
         Buffer<int> input(40, 40);
         for (int y = 0; y < 40; y++) {
