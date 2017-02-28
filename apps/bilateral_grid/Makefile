@@ -21,7 +21,7 @@ $(BIN)/viz/bilateral_grid.a: $(BIN)/bilateral_grid_exec
 
 $(BIN)/filter: $(BIN)/bilateral_grid.a $(BIN)/bilateral_grid_auto_schedule.a filter.cpp
 	@-mkdir -p $(BIN)
-	$(CXX) $(CXXFLAGS) -O3 -ffast-math -Wall -Werror -I$(BIN) filter.cpp $(BIN)/bilateral_grid.a -o $@ $(IMAGE_IO_FLAGS) $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) -O3 -ffast-math -Wall -Werror -I$(BIN) filter.cpp $(BIN)/bilateral_grid.a $(BIN)/bilateral_grid_auto_schedule.a -o $@ $(IMAGE_IO_FLAGS) $(LDFLAGS)
 $(BIN)/filter_viz: $(BIN)/viz/bilateral_grid.a filter.cpp
 	@-mkdir -p $(BIN)
 	$(CXX) $(CXXFLAGS) -O3 -ffast-math -Wall -Werror -I$(BIN)/viz filter.cpp $(BIN)/viz/bilateral_grid.a -o $@ $(IMAGE_IO_FLAGS) $(LDFLAGS)

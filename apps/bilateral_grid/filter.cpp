@@ -39,13 +39,13 @@ int main(int argc, char **argv) {
 
     // Auto-scheduled version
     double min_t_auto = benchmark(timing_iterations, 10, [&]() {
-        bilateral_grid(input, r_sigma, output);
+        bilateral_grid_auto_schedule(input, r_sigma, output);
     });
     printf("Auto-scheduled time: %gms\n", min_t_auto * 1e3);
 
     save_image(output, argv[2]);
 
-    if (min_t_auto > min_t_manual * 1.5) {
+    if (min_t_auto > min_t_manual * 2) {
         printf("Auto-scheduler is much much slower than it should be.\n");
         return -1;
     }
