@@ -2816,7 +2816,7 @@ void inline_all_trivial_functions(const vector<Function> &outputs, map<string, F
     }
 
     for (const auto &f : should_remove) {
-        debug(0) << "Remove function \"" << f << "\" from 'env' since it is inlined\n";
+        debug(4) << "Remove function \"" << f << "\" from 'env' since it is inlined\n";
         env.erase(f);
     }
 }
