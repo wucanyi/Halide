@@ -716,6 +716,10 @@ void Function::accept(IRVisitor *visitor) const {
     contents->accept(visitor);
 }
 
+void Function::mutate(IRMutator *mutator) {
+    contents->mutate(mutator);
+}
+
 const std::string &Function::name() const {
     return contents->name;
 }

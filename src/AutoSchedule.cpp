@@ -5,6 +5,7 @@
 #include "ExprUsesVar.h"
 #include "FindCalls.h"
 #include "Func.h"
+#include "Inline.h"
 #include "ParallelRVar.h"
 #include "RealizationOrder.h"
 #include "RegionCosts.h"
@@ -2772,6 +2773,41 @@ void validate_no_partial_schedules(const Function &f) {
     }
 }
 
+// If the cost of computing a Func is about the same as calling the Func,
+// inline the Func and remove it from 'env'.
+void inline_all_trivial_functions(const vector<Function> &outputs, map<string, Function> &env) {
+    set<string> should_remove;
+    for (auto &iter1 : env) {
+        bool is_output = false;
+        for (const Function &f : outputs) {
+            if (iter1.first == f.name()) {
+                is_output = true;
+                break;
+            }
+        }
+        if (is_output) {
+            // Should not inline output Func
+            continue;
+        }
+
+        if (is_func_trivial_to_inline(iter1.second)) {
+            should_remove.insert(iter1.first);
+            for (auto &iter2 : env) {
+                if (iter1.first != iter2.first) {
+                    debug(4) << "Inline trivial function \"" << iter1.first
+                             << "\" inside \"" << iter2.first << "\"\n";
+                    inline_function(iter2.second, iter1.second);
+                }
+            }
+        }
+    }
+
+    for (const auto &f : should_remove) {
+        debug(0) << "Remove function \"" << f << "\" from 'env' since it is inlined\n";
+        env.erase(f);
+    }
+}
+
 } // anonymous namespace
 
 // Generate schedules for all functions in the pipeline required to compute the
@@ -2791,14 +2827,19 @@ string generate_schedules(const vector<Function> &outputs, const Target &target,
         validate_no_partial_schedules(iter.second);
     }
 
-    // Compute the bounds of function values which are used for dependence analysis.
-    vector<string> order = realization_order(outputs, env);
-    FuncValueBounds func_val_bounds = compute_function_value_bounds(order, env);
-
     // The auto scheduling algorithm requires estimates on the outputs of the
     // pipeline to get quantitative estimates of costs for computing functions
     // in the pipeline.
     check_estimates_on_outputs(outputs);
+
+    // Run a pre-pass that inline all trivial Funcs (i.e. if the cost of
+    // computing a Func is about the same as calling that Func, we should
+    // just inline it).
+    inline_all_trivial_functions(outputs, env);
+
+    // Compute the bounds of function values which are used for dependence analysis.
+    vector<string> order = realization_order(outputs, env);
+    FuncValueBounds func_val_bounds = compute_function_value_bounds(order, env);
 
     // Initialize the cost model.
     // Compute the expression costs for each function in the pipeline.
