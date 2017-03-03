@@ -2215,6 +2215,7 @@ void Partitioner::vectorize_stage(const Group &g, Stage f_handle, int stage_num,
 void Partitioner::reorder_dims(Stage f_handle, int stage_num, Definition def,
                                map<string, int64_t> strides, AutoSchedule &sched) {
     vector<Dim> &dims = def.schedule().dims();
+    internal_assert(dims.size() > 1);
     vector<pair<string, bool>> order;
 
     for (int d = 0; d < (int)dims.size() - 1; d++) {
@@ -2364,10 +2365,13 @@ void Partitioner::generate_group_cpu_schedule(
     }
 
     // Reorder the dimensions for better spatial locality (i.e. smallest stride
-    // is innermost)
-    map<string, int64_t> strides =
-        analyze_spatial_locality(g.output, group_storage_bounds, inlines);
-    reorder_dims(f_handle, g.output.stage_num, def, strides, sched);
+    // is innermost). If we only have one dimension (excluding __outermost),
+    // there is nothing to reorder.
+    if (dims.size() > 2) {
+        map<string, int64_t> strides =
+            analyze_spatial_locality(g.output, group_storage_bounds, inlines);
+        reorder_dims(f_handle, g.output.stage_num, def, strides, sched);
+    }
 
     vector<string> dim_vars(dims.size() - 1);
     for (size_t d = 0; d < dims.size() - 1; d++) {
@@ -2435,12 +2439,18 @@ void Partitioner::generate_group_cpu_schedule(
     // parallelize over it or to generate nested parallelism.
     //
     // Go from the outer to the innermost loop until sufficient parallelism
-    // is achieved.
+    // is achieved. Stop the search once we find a vectorized dimension since
+    // it doesn't make any sense to have a parallelized inner loop within a
+    // vectorized outer loop.
     bool nested_parallelism = true;
     if (nested_parallelism) {
         int dim_start = dims.size() - 2;
         string seq_var = "";
         for (int d = dim_start; d >= 0; d--) {
+            if (dims[d].for_type == ForType::Vectorized) {
+                break;
+            }
+
             string var = get_base_name(dims[d].var);
             bool is_rvar = (rvars.find(var) != rvars.end());
             internal_assert(is_rvar == dims[d].is_rvar());
@@ -2532,10 +2542,13 @@ void Partitioner::generate_group_cpu_schedule(
             }
         }
 
-        // Reorder the dimensions for better spatial locality
-        map<string, int64_t> mem_strides =
-            analyze_spatial_locality(mem, group_storage_bounds, inlines);
-        reorder_dims(mem_handle, mem.stage_num, mem_def, mem_strides, sched);
+        // Reorder the dimensions for better spatial locality. If we only have
+        // one dimension (excluding __outermost), there is nothing to reorder.
+        if (dims.size() > 2) {
+            map<string, int64_t> mem_strides =
+                analyze_spatial_locality(mem, group_storage_bounds, inlines);
+            reorder_dims(mem_handle, mem.stage_num, mem_def, mem_strides, sched);
+        }
 
         vectorize_stage(g, mem_handle, mem.stage_num, mem_def, mem.func, false,
                         t, mem_rvars, mem_estimates, sched);
