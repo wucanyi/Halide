@@ -1,5 +1,5 @@
 #!/bin/bash
-# This script generates the figures for lesson 5
+# This script generates the figures for lesson 19
 
 make_gif()
 {
