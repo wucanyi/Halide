@@ -19,6 +19,10 @@ Expr inline_function(Expr e, Function f);
 void inline_function(Function caller, Function f);
 // @}
 
+/** Check if the schedule of an inlined function is legal, throwing an error
+ * if it is not. */
+void validate_schedule_inlined_function(Function f);
+
 }
 }
 
