@@ -2,6 +2,7 @@
 
 #include "Pipeline.h"
 #include "Argument.h"
+#include "FindCalls.h"
 #include "Func.h"
 #include "IRVisitor.h"
 #include "LLVM_Headers.h"
@@ -182,6 +183,22 @@ string Pipeline::auto_schedule(const Target &target) {
     arch_params.balance = 40;
 
     return generate_schedules(contents->outputs, target, arch_params);
+}
+
+Func Pipeline::get_func(const string &name) {
+    for (Function f : contents->outputs) {
+        if (name == f.name()) {
+            return Func(f);
+        }
+        std::map<string, Function> more_funcs = find_transitive_calls(f);
+        for (const auto &iter : find_transitive_calls(f)) {
+            if (iter.first == name) {
+                return Func(iter.second);
+            }
+        }
+    }
+    user_error << "Func \"" << name << "\" does not exist within the pipeline.\n";
+    return Func();
 }
 
 void Pipeline::compile_to(const Outputs &output_files,

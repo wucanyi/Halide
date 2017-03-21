@@ -220,10 +220,6 @@ std::vector<Bound> &Schedule::bounds() {
     return contents->bounds;
 }
 
-std::vector<Bound> &Schedule::estimates() {
-    return contents->estimates;
-}
-
 const std::vector<Bound> &Schedule::bounds() const {
     return contents->bounds;
 }
@@ -234,6 +230,10 @@ std::vector<PrefetchDirective> &Schedule::prefetches() {
 
 const std::vector<PrefetchDirective> &Schedule::prefetches() const {
     return contents->prefetches;
+}
+
+std::vector<Bound> &Schedule::estimates() {
+    return contents->estimates;
 }
 
 const std::vector<Bound> &Schedule::estimates() const {

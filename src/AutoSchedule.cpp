@@ -11,6 +11,7 @@
 #include "RegionCosts.h"
 #include "Scope.h"
 #include "Simplify.h"
+#include "Util.h"
 
 namespace Halide {
 namespace Internal {
@@ -554,15 +555,28 @@ map<string, Box> get_pipeline_bounds(DependenceAnalysis &analysis,
 }
 
 struct AutoSchedule {
+    struct Stage {
+        string function;
+        size_t stage;
+
+        Stage(const string &f, size_t s) : function(f), stage(s) {}
+
+        bool operator==(const Stage &other) const {
+            return (function == other.function) && (stage == other.stage);
+        }
+        bool operator<(const Stage &other) const {
+            return (function < other.function) || ((function == other.function) && (stage < other.stage));
+        }
+    };
+
     // Cache for storing all internal vars/rvars that have been declared during
     // the course of schedule generation, to ensure that we don't introduce any
     // duplicates in the string representation of the schedules.
     map<string, VarOrRVar> vars_declared;
 
     // Store the list of schedules applied to some function stages (most recent
-    // schedule is placed last in the list). The map is indexed by the string
-    // representation of a function stage, e.g. f, f.update(0), etc.
-    map<string, vector<string>> func_schedules;
+    // schedule is placed last in the list).
+    map<Stage, vector<string>> func_schedules;
 
     friend std::ostream& operator<<(std::ostream &stream, const AutoSchedule &sched) {
         for (const auto &iter : sched.vars_declared) {
@@ -576,7 +590,11 @@ struct AutoSchedule {
 
         for (const auto &iter : sched.func_schedules) {
             internal_assert(!iter.second.empty());
-            stream << iter.first << "." << iter.second[0];
+            stream << "pipeline.get_func(\"" << iter.first.function << "\")";
+            if (iter.first.stage > 0) {
+                stream << ".update(" << std::to_string(iter.first.stage - 1) << ")\n    ";
+            }
+            stream << "." << iter.second[0];
             for (size_t i = 1; i < iter.second.size(); ++i) {
                 stream << "\n    ." << iter.second[i];
             }
@@ -586,12 +604,11 @@ struct AutoSchedule {
         return stream;
     }
 
-    void push_schedule(const string &stage, int stage_num, const string &sched) {
-        // We want the schedule on an update stage to be on a new line, e.g.
-        // f.update(0)
-        //    .parallel(x);
-        string key = (stage_num == 0) ? stage : stage + "\n    ";
-        auto &schedules = func_schedules[key];
+    void push_schedule(const string &stage_name, size_t stage_num, const string &sched) {
+        vector<string> v = split_string(stage_name, ".");
+        internal_assert(!v.empty());
+
+        auto &schedules = func_schedules[Stage(v[0], stage_num)];
 
         // If the previous schedule applied is the same as this one,
         // there is no need to re-apply the schedule
@@ -2485,7 +2502,7 @@ void Partitioner::generate_group_cpu_schedule(
     }
 
     if (def_par < arch_params.parallelism) {
-        user_warning << "Warning: insufficient parallelism for " << f_handle.name() << '\n';
+        user_warning << "Insufficient parallelism for " << f_handle.name() << '\n';
     }
 
     // Find the level at which group members will be computed.
@@ -2535,7 +2552,7 @@ void Partitioner::generate_group_cpu_schedule(
                 sched.push_schedule(mem_handle.name(), mem.stage_num,
                                     "compute_at(" + g_out.name() + ", " + tile_inner_var.name() + ")");
             } else {
-                user_warning << "Warning: Degenerate tiling. No dimensions are tiled" << '\n';
+                user_warning << "Degenerate tiling. No dimensions are tiled" << '\n';
                 user_warning << "Computing \"" <<  mem.func.name() << "\" at root" << '\n';
                 Func(mem.func).compute_root();
                 sched.push_schedule(mem_handle.name(), mem.stage_num, "compute_root()");

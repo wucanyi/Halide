@@ -80,10 +80,15 @@ public:
     EXPORT std::vector<Func> outputs() const;
 
     /** Generate a schedule for the pipeline. */
+    //@{
     EXPORT std::string auto_schedule(const Target &target,
                                      const MachineParams &arch_params);
-
     EXPORT std::string auto_schedule(const Target &target);
+    //@}
+
+    /** Return handle to a Func within the pipeline that has the specified name.
+     * Throw an error if the Func does not exist within the pipeline. */
+    EXPORT Func get_func(const std::string &name);
 
     /** Compile and generate multiple target files with single call.
      * Deduces target files based on filenames specified in
