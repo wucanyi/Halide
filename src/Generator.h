@@ -1269,6 +1269,9 @@ protected:
     virtual std::string get_c_type() const = 0;
 
     EXPORT void check_value_writable() const override;
+
+    EXPORT void estimate_impl(Var var, Expr min, Expr extent);
+
 private:
     EXPORT void init_parameters();
 };
@@ -1398,6 +1401,11 @@ public:
     operator Func() const {
         return this->funcs().at(0);
     }
+
+    GeneratorInput_Buffer<T> &estimate(Var var, Expr min, Expr extent) {
+        this->estimate_impl(var, min, extent);
+        return *this;
+    }
 };
 
 
@@ -1464,6 +1472,11 @@ public:
     operator Func() const {
         return this->funcs().at(0);
     }
+
+    GeneratorInput_Func<T> &estimate(Var var, Expr min, Expr extent) {
+        this->estimate_impl(var, min, extent);
+        return *this;
+    }
 };
 
 
@@ -1512,8 +1525,9 @@ public:
     }
 
     void set_estimate(Expr value) {
-        internal_assert(this->parameters_.size() == 1);
-        this->parameters_.at(0).set_estimate(value);
+        for (Parameter &p : this->parameters_) {
+            p.set_estimate(value);
+        }
     }
 };
 
@@ -1941,8 +1955,10 @@ public:
     }
 
     GeneratorOutput_Func<T> &estimate(Var var, Expr min, Expr extent) {
-        internal_assert(this->funcs().size() == 1);
-        get_assignable_func_ref(0).estimate(var, min, extent);
+        internal_assert(this->exprs_.empty() && this->funcs_.size() > 0);
+        for (Func &f : this->funcs_) {
+            f.estimate(var, min, extent);
+        }
         return *this;
     }
 };
