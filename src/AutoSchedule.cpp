@@ -569,17 +569,35 @@ struct AutoSchedule {
         }
     };
 
+    // Contain all the vars/rvars in the original dim lists of all functions in
+    // the pipeline.
+    map<string, VarOrRVar> dim_vars;
+
     // Cache for storing all internal vars/rvars that have been declared during
     // the course of schedule generation, to ensure that we don't introduce any
     // duplicates in the string representation of the schedules.
-    map<string, VarOrRVar> vars_declared;
+    map<string, VarOrRVar> internal_vars;
 
     // Store the list of schedules applied to some function stages (most recent
     // schedule is placed last in the list).
     map<Stage, vector<string>> func_schedules;
 
+    AutoSchedule(const map<string, Function> &env) {
+        for (const auto &iter : env) {
+            const Function &f = iter.second;
+            int num_stages = f.updates().size() + 1;
+            for (int s = 0; s < num_stages; s++) {
+                Definition def = get_stage_definition(f, s);
+                const vector<Dim> &dims = def.schedule().dims();
+                for (int i = 0; i < (int)dims.size() - 1; ++i) {
+                    dim_vars.emplace(dims[i].var, VarOrRVar(dims[i].var, dims[i].is_rvar()));
+                }
+            }
+        }
+    }
+
     friend std::ostream& operator<<(std::ostream &stream, const AutoSchedule &sched) {
-        for (const auto &iter : sched.vars_declared) {
+        for (const auto &iter : sched.dim_vars) {
             if (iter.second.is_rvar) {
                 stream << "RVar ";
             } else {
@@ -587,6 +605,17 @@ struct AutoSchedule {
             }
             stream << iter.first << "(\"" << iter.first << "\");\n";
         }
+        stream << "\n";
+
+        for (const auto &iter : sched.internal_vars) {
+            if (iter.second.is_rvar) {
+                stream << "RVar ";
+            } else {
+                stream << "Var ";
+            }
+            stream << iter.first << "(\"" << iter.first << "\");\n";
+        }
+        stream << "\n";
 
         for (const auto &iter : sched.func_schedules) {
             internal_assert(!iter.second.empty());
@@ -2083,17 +2112,17 @@ pair<VarOrRVar, VarOrRVar> Partitioner::split_dim(
     VarOrRVar inner(inner_name, v.is_rvar), outer(outer_name, v.is_rvar);
 
     {
-        const auto &iter = sched.vars_declared.find(inner.name());
-        if (iter == sched.vars_declared.end()) {
-            sched.vars_declared.emplace(inner.name(), inner);
+        const auto &iter = sched.internal_vars.find(inner.name());
+        if (iter == sched.internal_vars.end()) {
+            sched.internal_vars.emplace(inner.name(), inner);
         } else {
             internal_assert(iter->second.is_rvar == inner.is_rvar);
         }
     }
     {
-        const auto &iter = sched.vars_declared.find(outer.name());
-        if (iter == sched.vars_declared.end()) {
-            sched.vars_declared.emplace(outer.name(), outer);
+        const auto &iter = sched.internal_vars.find(outer.name());
+        if (iter == sched.internal_vars.end()) {
+            sched.internal_vars.emplace(outer.name(), outer);
         } else {
             internal_assert(iter->second.is_rvar == outer.is_rvar);
         }
@@ -2229,6 +2258,24 @@ void Partitioner::vectorize_stage(const Group &g, Stage f_handle, int stage_num,
     }
 }
 
+// Return true if the vars/rvars in 'ordering' are in the same order as the
+// dim list.
+inline bool operator==(const vector<Dim> &dims, const vector<VarOrRVar> &ordering) {
+    internal_assert(dims.size() == ordering.size() + 1); // The dim list also contains '__outermost'
+    for (size_t i = 0; i < ordering.size(); ++i) {
+        if (dims[i].var != ordering[i].name()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Return true if the vars/rvars in 'ordering' are not in the same order as the
+// dim list.
+inline bool operator!=(const vector<Dim> &dims, const vector<VarOrRVar> &ordering) {
+    return !(dims == ordering);
+}
+
 void Partitioner::reorder_dims(Stage f_handle, int stage_num, Definition def,
                                map<string, int64_t> strides, AutoSchedule &sched) {
     vector<Dim> &dims = def.schedule().dims();
@@ -2305,8 +2352,10 @@ void Partitioner::reorder_dims(Stage f_handle, int stage_num, Definition def,
         var_order += ", " + ordering[o].name();
     }
 
-    f_handle.reorder(ordering);
-    sched.push_schedule(f_handle.name(), stage_num, "reorder(" + var_order + ")");
+    if (dims != ordering) {
+        f_handle.reorder(ordering);
+        sched.push_schedule(f_handle.name(), stage_num, "reorder(" + var_order + ")");
+    }
 }
 
 // Visitor to find all the variables the depend on a variable.
@@ -2443,8 +2492,10 @@ void Partitioner::generate_group_cpu_schedule(
             var_order += ", " + ordering[o].name();
         }
 
-        f_handle.reorder(ordering);
-        sched.push_schedule(f_handle.name(), g.output.stage_num, "reorder(" + var_order + ")");
+        if (dims != ordering) {
+            f_handle.reorder(ordering);
+            sched.push_schedule(f_handle.name(), g.output.stage_num, "reorder(" + var_order + ")");
+        }
     }
 
     vectorize_stage(g, f_handle, g.output.stage_num, def, g_out, true, t,
@@ -2929,7 +2980,7 @@ string generate_schedules(const vector<Function> &outputs, const Target &target,
         part.disp_pipeline_graph();
     }
 
-    AutoSchedule sched;
+    AutoSchedule sched(env);
     part.generate_cpu_schedule(target, sched);
 
     std::ostringstream oss;
