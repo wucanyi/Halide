@@ -53,7 +53,7 @@ Func blur_cols_transpose(Func input, Expr height, Expr alpha,
 
 double run_test(bool auto_schedule) {
 
-    int W = 1024;
+    int W = 2048;
     int H = 2048;
     Buffer<float> input(W, H, 3);
 
@@ -86,8 +86,8 @@ double run_test(bool auto_schedule) {
 
     if (auto_schedule) {
         // Provide estimates on the pipeline output
-        blur.estimate(x, 0, 1024)
-            .estimate(y, 0, 2048)
+        blur.estimate(x, 0, W)
+            .estimate(y, 0, H)
             .estimate(c, 0, 3);
         // Auto-schedule the pipeline
         p.auto_schedule(target);
@@ -97,7 +97,7 @@ double run_test(bool auto_schedule) {
     blur.print_loop_nest();
 
     // Run the schedule
-    Buffer<float> out(1024, 2048, 3);
+    Buffer<float> out(W, H, 3);
     double t = benchmark(3, 10, [&]() {
         p.realize(out);
     });

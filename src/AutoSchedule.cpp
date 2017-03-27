@@ -100,9 +100,42 @@ struct DependenceAnalysis {
     const map<string, Function> &env;
     const FuncValueBounds &func_val_bounds;
 
-    // TODO: Auto scheduling for large benchmarks is bottlenecked by the bound inference.
-    // Bound queries with the same parameters are common during the grouping process;
-    // it might be beneficial to build a cache for bounds queries.
+    struct RegionsRequiredQuery {
+        string f;
+        int stage;
+        DimBounds bounds;
+        set<string> prods;
+        bool only_regions_computed;
+
+        RegionsRequiredQuery(const string &f, int stage, const DimBounds &bounds,
+                             const set<string> &prods, bool only_regions_computed)
+            : f(f), stage(stage), bounds(bounds), prods(prods),
+              only_regions_computed(only_regions_computed) {}
+
+        bool operator==(const RegionsRequiredQuery &other) const {
+            return (f == other.f) && (stage == other.stage) &&
+                   (bounds == other.bounds) && (prods == other.prods) &&
+                   (only_regions_computed == other.only_regions_computed);
+        }
+        bool operator<(const RegionsRequiredQuery &other) const {
+            if (f < other.f) {
+                return true;
+            }
+            if (stage < other.stage) {
+                return true;
+            }
+            if (prods.size() < other.prods.size()) {
+                return true;
+            }
+            if (only_regions_computed < other.only_regions_computed) {
+                return true;
+            }
+            return bounds.size() < other.bounds.size();
+        }
+    };
+    // Cache for bounds queries (bound queries with the same parameters are
+    // common during the grouping process).
+    map<RegionsRequiredQuery, map<string, Box>> regions_required_cache;
 
     DependenceAnalysis(const map<string, Function> &env, const FuncValueBounds &func_val_bounds)
         : env(env), func_val_bounds(func_val_bounds) {}
@@ -247,6 +280,13 @@ DependenceAnalysis::regions_required(Function f, int stage_num,
                                      const Scope<Interval> *input_estimates) {
     // Iteratively compute the required regions by traversing the chain
     // of dependencies.
+
+    // Check the cache if we've already computed this previously
+    RegionsRequiredQuery query(f.name(), stage_num, bounds, prods, only_regions_computed);
+    auto iter = regions_required_cache.find(query);
+    if (iter != regions_required_cache.end()) {
+        return iter->second;
+    }
 
     // Map of all the required regions.
     map<string, Box> regions;
@@ -413,6 +453,8 @@ DependenceAnalysis::regions_required(Function f, int stage_num,
         }
         concrete_regions[f_reg.first] = concrete_box;
     }
+
+    regions_required_cache.emplace(query, concrete_regions);
     return concrete_regions;
 }
 

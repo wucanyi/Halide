@@ -71,7 +71,7 @@ double run_test(bool auto_schedule) {
     Func shifted("shifted");
     shifted(x, y) = harris(x + 2, y + 2);
 
-    shifted.estimate(x, 0, 1920).estimate(y, 0, 1024);
+    shifted.estimate(x, 0, W).estimate(y, 0, H);
 
     Target target = get_target_from_environment();
     Pipeline p(shifted);
@@ -97,7 +97,7 @@ double run_test(bool auto_schedule) {
     shifted.print_loop_nest();
 
     // Run the schedule
-    Buffer<float> out(1920, 1024);
+    Buffer<float> out(W, H);
     double t = benchmark(3, 10, [&]() {
         p.realize(out);
     });
@@ -114,7 +114,7 @@ int main(int argc, char **argv) {
     std::cout << "Auto time: " << auto_time << "ms" << std::endl;
     std::cout << "======================" << std::endl;
 
-    if (3 * auto_time > manual_time) {
+    if (2.5 * auto_time > manual_time) {
         printf("Auto-scheduler is much much slower than it should be.\n");
         return -1;
     }
