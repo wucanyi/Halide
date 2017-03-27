@@ -665,8 +665,7 @@ struct AutoSchedule {
             if (iter.first.stage > 0) {
                 stream << ".update(" << std::to_string(iter.first.stage - 1) << ")\n    ";
             }
-            stream << "." << iter.second[0];
-            for (size_t i = 1; i < iter.second.size(); ++i) {
+            for (size_t i = 0; i < iter.second.size(); ++i) {
                 stream << "\n    ." << iter.second[i];
             }
             stream << ";\n";
@@ -2643,7 +2642,7 @@ void Partitioner::generate_group_cpu_schedule(
                     Func(mem.func).compute_at(Func(g_out), tile_inner_var.var);
                 }
                 sched.push_schedule(mem_handle.name(), mem.stage_num,
-                                    "compute_at(" + g_out.name() + ", " + tile_inner_var.name() + ")");
+                                    "compute_at(pipeline.get_func(\"" + g_out.name() + "\"), " + tile_inner_var.name() + ")");
             } else {
                 user_warning << "Degenerate tiling. No dimensions are tiled" << '\n';
                 user_warning << "Computing \"" <<  mem.func.name() << "\" at root" << '\n';
@@ -3028,7 +3027,6 @@ string generate_schedules(const vector<Function> &outputs, const Target &target,
     std::ostringstream oss;
     oss << sched;
     string sched_string = oss.str();
-    std::replace(sched_string.begin(), sched_string.end(), '$', '_');
 
     // TODO: Unify both inlining and grouping for fast mem
     // TODO: GPU scheduling
