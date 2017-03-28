@@ -98,6 +98,7 @@ void check_estimates_on_outputs(const vector<Function> &outputs) {
 struct DependenceAnalysis {
     // Map containing all the functions in the pipeline.
     const map<string, Function> &env;
+    const vector<string> &order;
     const FuncValueBounds &func_val_bounds;
 
     struct RegionsRequiredQuery {
@@ -137,8 +138,9 @@ struct DependenceAnalysis {
     // common during the grouping process).
     map<RegionsRequiredQuery, map<string, Box>> regions_required_cache;
 
-    DependenceAnalysis(const map<string, Function> &env, const FuncValueBounds &func_val_bounds)
-        : env(env), func_val_bounds(func_val_bounds) {}
+    DependenceAnalysis(const map<string, Function> &env, const vector<string> &order,
+                       const FuncValueBounds &func_val_bounds)
+        : env(env), order(order), func_val_bounds(func_val_bounds) {}
 
     // Return the regions of the producers ('prods') required to compute the region
     // of the function stage ('f', 'stage_num') specified by 'bounds'. When
@@ -201,11 +203,40 @@ DependenceAnalysis::regions_required(Function f, const DimBounds &pure_bounds,
     return regions;
 }
 
-// Helper function to queue regions that need to be traversed. 'f_queue' is
+struct StageBounds {
+    FStage f_stage;
+    DimBounds bounds;
+
+    StageBounds(const FStage &fs, const DimBounds &b) : f_stage(fs), bounds(b) {}
+    StageBounds(Function func, uint32_t stage_num, const DimBounds &b) :
+        f_stage(FStage(func, stage_num)), bounds(b) {}
+
+    bool operator==(const StageBounds &other) const {
+        return (f_stage == other.f_stage) && (bounds == other.bounds);
+    }
+    bool operator<(const StageBounds &other) const {
+        if (f_stage < other.f_stage) {
+            return true;
+        }
+        return bounds.size() < other.bounds.size();
+    }
+    friend std::ostream& operator<<(std::ostream &stream, const StageBounds &s) {
+        stream << "Stage: " << s.f_stage << "\n";
+        stream << "Bounds:\n";
+        for (const auto &iter : s.bounds) {
+            debug(0) << "\t" << iter.first << " -> [" << iter.second.min << ", " << iter.second.max << "]\n";
+        }
+        debug(0) << "\n";
+        return stream;
+    }
+};
+
+// Helper function to queue regions that need to be traversed. 'fs_bounds' is
 // the queue into which the regions specified by 'prod_func' and 'region'
 // will be added.
-void queue_func_regions(deque<pair<FStage, DimBounds>> &f_queue,
-                        const Function &prod_func, const Box &region) {
+void queue_func_regions(map<FStage, DimBounds> &fs_bounds,
+                        const Function &prod_func, const Box &region,
+                        const set<StageBounds>& visited) {
     DimBounds prod_pure_bounds;
     const vector<string> &args = prod_func.args();
 
@@ -227,21 +258,47 @@ void queue_func_regions(deque<pair<FStage, DimBounds>> &f_queue,
 
     // Add all stages of a function into the queue.
     for (size_t prod_s = 0; prod_s < num_stages; prod_s++) {
-        FStage prod_stage(prod_func, prod_s);
-        f_queue.push_back(make_pair(prod_stage, prod_bounds[prod_s]));
+        StageBounds sb(prod_func, prod_s, prod_bounds[prod_s]);
+        if (visited.find(sb) == visited.end()) {
+            auto iter = fs_bounds.find(sb.f_stage);
+            if (iter == fs_bounds.end()) {
+                fs_bounds.emplace(sb.f_stage, sb.bounds);
+            } else {
+                for (const auto &b : sb.bounds) {
+                    DimBounds &curr_bounds = iter->second;
+                    auto b_iter = curr_bounds.find(b.first);
+                    if (b_iter == curr_bounds.end()) {
+                        curr_bounds.emplace(b.first, b.second);
+                    } else {
+                        if (b_iter->second.has_lower_bound() && b.second.has_lower_bound()) {
+                            b_iter->second.min = simplify(Interval::make_min(b_iter->second.min, b.second.min));
+                        } else {
+                            b_iter->second.min = Interval::neg_inf;
+                        }
+
+                        if (b_iter->second.has_upper_bound() && b.second.has_upper_bound()) {
+                            b_iter->second.max = simplify(Interval::make_max(b_iter->second.max, b.second.max));
+                        } else {
+                            b_iter->second.max = Interval::pos_inf;
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
 // Helper function for merging 'curr_regions' to the global map of regions
 // and adding them to the queue of regions that need to be traversed.
 // 'prods' is the set of producer functions that are under consideration.
-void merge_and_queue_regions(deque<pair<FStage, DimBounds>> &f_queue,
+void merge_and_queue_regions(map<FStage, DimBounds> &fs_bounds,
                              map<string, Box> &regions,
                              map<string, Box> &curr_regions,
                              const set<string> &prods,
                              const map<string, Function> &env,
                              bool only_regions_computed,
-                             string curr_func_name) {
+                             string curr_func_name,
+                             const set<StageBounds>& visited) {
     for (const auto &reg : curr_regions) {
         // Merge region with an existing region of a function in the
         // global map. Do not merge the parent function itself to the region
@@ -265,7 +322,7 @@ void merge_and_queue_regions(deque<pair<FStage, DimBounds>> &f_queue,
         if ((it != env.end()) && (reg.first != curr_func_name)) {
             // Add all stages of the function representing the
             // region into the queue.
-            queue_func_regions(f_queue, it->second, reg.second);
+            queue_func_regions(fs_bounds, it->second, reg.second, visited);
         }
     }
 }
@@ -290,124 +347,135 @@ DependenceAnalysis::regions_required(Function f, int stage_num,
 
     // Map of all the required regions.
     map<string, Box> regions;
-    deque<pair<FStage, DimBounds>> f_queue;
+    map<FStage, DimBounds> fs_bounds;
+    set<StageBounds> visited;
 
     // Add the query function and its region to the queue
-    FStage start(f, stage_num);
-    f_queue.push_back(make_pair(start, bounds));
+    fs_bounds.emplace(FStage(f, stage_num), bounds);
 
-    while(!f_queue.empty()) {
+    while(!fs_bounds.empty()) {
+        for (int i = order.size() - 1; i >= 0; --i) {
+            const Function &f = env.find(order[i])->second;
+            int num_stages = f.updates().size() + 1;
+            for (int stage_num = 0; stage_num < num_stages; ++stage_num) {
+                FStage s(f, stage_num);
 
-        FStage s = f_queue.front().first;
-        DimBounds curr_bounds = f_queue.front().second;
-
-        Definition def = get_stage_definition(s.func, s.stage_num);
-        // Scope for containing all the estimates on parameters and intervals.
-        Scope<Interval> curr_scope;
-        curr_scope.set_containing_scope(input_estimates);
-
-        const vector<Dim> &dims = def.schedule().dims();
-
-        // Substitute parameter estimates into the bounds and add them to the
-        // current scope.
-        for (int d = 0; d < (int)dims.size() - 1; d++) {
-            string var_name = dims[d].var;
-            internal_assert(curr_bounds.find(var_name) != curr_bounds.end());
-
-            Expr lower = SubstituteVarEstimates().mutate(get_element(curr_bounds, dims[d].var).min);
-            Expr upper = SubstituteVarEstimates().mutate(get_element(curr_bounds, dims[d].var).max);
-            Interval simple_bounds = Interval(simplify(lower), simplify(upper));
-            curr_scope.push(var_name, simple_bounds);
-        }
-
-        // If the function has an extern definition, there is no visibility into
-        // the expression defining the function. So the regions required will be
-        // the entire domain of the inputs to the extern func. Use the estimates
-        // on the inputs to the extern function if available.
-        //
-        // TODO: Query the extern function for bounds of the functions which it
-        // it depends on. This can be done by calling the extern func in the
-        // bounds query mode.
-        if (s.func.has_extern_definition()) {
-            for (const ExternFuncArgument &arg : s.func.extern_arguments()) {
-                if (arg.is_func()) {
-                    // If the argument is an entire function, the bounds of the
-                    // function required are unknown. Create an infinite region
-                    // of the correct dimension, update the region map, and
-                    // add it to the queue.
-                    string prod_name = Function(arg.func).name();
-                    const Function &prod_func = get_element(env, prod_name);
-                    map<string, Box> prod_reg;
-                    const vector<string> &args = prod_func.args();
-                    for (size_t v = 0; v < args.size(); v++) {
-                        prod_reg[prod_name].push_back(Interval());
-                    }
-                    merge_and_queue_regions(f_queue, regions, prod_reg, prods,
-                                            env, only_regions_computed, s.func.name());
-                } else if (arg.is_expr()) {
-                    // Find the boxes required for the expression and add the regions
-                    // to the queue.
-                    Expr subs_arg = SubstituteVarEstimates().mutate(arg.expr);
-                    map<string, Box> arg_regions = boxes_required(subs_arg, curr_scope, func_val_bounds);
-
-                    merge_and_queue_regions(f_queue, regions, arg_regions, prods,
-                                            env, only_regions_computed, s.func.name());
-                } else if (arg.is_image_param() || arg.is_buffer()) {
-                    // If the argument is an image or a buffer, the required
-                    // bounds are unknown. Create an infinite region of the
-                    // correct dimension and update the region map.
-                    Buffer<> buf;
-                    if (arg.is_image_param()) {
-                        buf = arg.image_param.get_buffer();
-                    } else {
-                        buf = arg.buffer;
-                    }
-                    map<string, Box> buf_reg;
-                    for (int v = 0; v < buf.dimensions(); v++) {
-                        buf_reg[buf.name()].push_back(Interval());
-                    }
-                    merge_regions(regions, buf_reg);
+                const auto &iter = fs_bounds.find(s);
+                if (iter == fs_bounds.end()) {
+                    continue;
                 }
+
+                DimBounds curr_bounds = iter->second;
+                visited.insert(StageBounds(s, curr_bounds));
+
+                Definition def = get_stage_definition(s.func, s.stage_num);
+                // Scope for containing all the estimates on parameters and intervals.
+                Scope<Interval> curr_scope;
+                curr_scope.set_containing_scope(input_estimates);
+
+                const vector<Dim> &dims = def.schedule().dims();
+
+                // Substitute parameter estimates into the bounds and add them to the
+                // current scope.
+                for (int d = 0; d < (int)dims.size() - 1; d++) {
+                    string var_name = dims[d].var;
+                    internal_assert(curr_bounds.find(var_name) != curr_bounds.end());
+
+                    Expr lower = SubstituteVarEstimates().mutate(get_element(curr_bounds, dims[d].var).min);
+                    Expr upper = SubstituteVarEstimates().mutate(get_element(curr_bounds, dims[d].var).max);
+                    Interval simple_bounds = Interval(simplify(lower), simplify(upper));
+                    curr_scope.push(var_name, simple_bounds);
+                }
+
+                // If the function has an extern definition, there is no visibility into
+                // the expression defining the function. So the regions required will be
+                // the entire domain of the inputs to the extern func. Use the estimates
+                // on the inputs to the extern function if available.
+                //
+                // TODO: Query the extern function for bounds of the functions which it
+                // it depends on. This can be done by calling the extern func in the
+                // bounds query mode.
+                if (s.func.has_extern_definition()) {
+                    for (const ExternFuncArgument &arg : s.func.extern_arguments()) {
+                        if (arg.is_func()) {
+                            // If the argument is an entire function, the bounds of the
+                            // function required are unknown. Create an infinite region
+                            // of the correct dimension, update the region map, and
+                            // add it to the queue.
+                            string prod_name = Function(arg.func).name();
+                            const Function &prod_func = get_element(env, prod_name);
+                            map<string, Box> prod_reg;
+                            const vector<string> &args = prod_func.args();
+                            for (size_t v = 0; v < args.size(); v++) {
+                                prod_reg[prod_name].push_back(Interval());
+                            }
+                            merge_and_queue_regions(fs_bounds, regions, prod_reg, prods, env,
+                                                    only_regions_computed, s.func.name(), visited);
+                        } else if (arg.is_expr()) {
+                            // Find the boxes required for the expression and add the regions
+                            // to the queue.
+                            Expr subs_arg = SubstituteVarEstimates().mutate(arg.expr);
+                            map<string, Box> arg_regions = boxes_required(subs_arg, curr_scope, func_val_bounds);
+                            merge_and_queue_regions(fs_bounds, regions, arg_regions, prods, env,
+                                                    only_regions_computed, s.func.name(), visited);
+                        } else if (arg.is_image_param() || arg.is_buffer()) {
+                            // If the argument is an image or a buffer, the required
+                            // bounds are unknown. Create an infinite region of the
+                            // correct dimension and update the region map.
+                            Buffer<> buf;
+                            if (arg.is_image_param()) {
+                                buf = arg.image_param.get_buffer();
+                            } else {
+                                buf = arg.buffer;
+                            }
+                            map<string, Box> buf_reg;
+                            for (int v = 0; v < buf.dimensions(); v++) {
+                                buf_reg[buf.name()].push_back(Interval());
+                            }
+                            merge_regions(regions, buf_reg);
+                        }
+                    }
+                }
+
+                // Find the regions required for each value of the current function stage,
+                // update the region map, and add them to the queue.
+                for (const auto &val : def.values()) {
+                    // Substitute the parameter estimates into the expression and get
+                    // the regions required for the expression.
+                    Expr subs_val = SubstituteVarEstimates().mutate(val);
+                    map<string, Box> curr_regions = boxes_required(subs_val, curr_scope, func_val_bounds);
+
+                    // Arguments to the definition may require regions of functions.
+                    // For example, update definitions in histograms where the bin is
+                    // based on the value of a function.
+                    Box left_reg;
+                    for (const Expr &arg : def.args()) {
+                        Expr subs_arg = SubstituteVarEstimates().mutate(arg);
+                        map<string, Box> arg_regions = boxes_required(subs_arg, curr_scope, func_val_bounds);
+
+                        // Merge the regions with the regions found while looking at
+                        // the values.
+                        merge_regions(curr_regions, arg_regions);
+
+                        Interval arg_bounds = bounds_of_expr_in_scope(arg, curr_scope, func_val_bounds);
+                        left_reg.push_back(arg_bounds);
+                    }
+
+                    auto iter = curr_regions.find(s.func.name());
+                    if (iter == curr_regions.end()) {
+                        curr_regions.emplace(s.func.name(), left_reg);
+                    } else {
+                        merge_boxes(iter->second, left_reg);
+                    }
+
+                    // Update the region map, and add 'curr_regions' to the queue.
+                    merge_and_queue_regions(fs_bounds, regions, curr_regions, prods, env,
+                                            only_regions_computed, s.func.name(), visited);
+                }
+                // Remove processed region from the queue.
+                fs_bounds.erase(iter);
             }
         }
-
-        // Find the regions required for each value of the current function stage,
-        // update the region map, and add them to the queue.
-        for (const auto &val : def.values()) {
-            // Substitute the parameter estimates into the expression and get
-            // the regions required for the expression.
-            Expr subs_val = SubstituteVarEstimates().mutate(val);
-            map<string, Box> curr_regions = boxes_required(subs_val, curr_scope, func_val_bounds);
-
-            // Arguments to the definition may require regions of functions.
-            // For example, update definitions in histograms where the bin is
-            // based on the value of a function.
-            Box left_reg;
-            for (const Expr &arg : def.args()) {
-                Expr subs_arg = SubstituteVarEstimates().mutate(arg);
-                map<string, Box> arg_regions = boxes_required(subs_arg, curr_scope, func_val_bounds);
-
-                // Merge the regions with the regions found while looking at
-                // the values.
-                merge_regions(curr_regions, arg_regions);
-
-                Interval arg_bounds = bounds_of_expr_in_scope(arg, curr_scope, func_val_bounds);
-                left_reg.push_back(arg_bounds);
-            }
-
-            auto iter = curr_regions.find(s.func.name());
-            if (iter == curr_regions.end()) {
-                curr_regions.emplace(s.func.name(), left_reg);
-            } else {
-                merge_boxes(iter->second, left_reg);
-            }
-
-            // Update the region map, and add 'curr_regions' to the queue.
-            merge_and_queue_regions(f_queue, regions, curr_regions, prods, env,
-                                    only_regions_computed, s.func.name());
-        }
-        // Remove processed region from the queue.
-        f_queue.pop_front();
     }
 
     // Simplify the bounds on each region and substitute global pipeline
@@ -663,7 +731,7 @@ struct AutoSchedule {
             internal_assert(!iter.second.empty());
             stream << "pipeline.get_func(\"" << iter.first.function << "\")";
             if (iter.first.stage > 0) {
-                stream << ".update(" << std::to_string(iter.first.stage - 1) << ")\n    ";
+                stream << ".update(" << std::to_string(iter.first.stage - 1) << ")";
             }
             for (size_t i = 0; i < iter.second.size(); ++i) {
                 stream << "\n    ." << iter.second[i];
@@ -2970,7 +3038,7 @@ string generate_schedules(const vector<Function> &outputs, const Target &target,
         costs.disp_func_costs();
     }
 
-    DependenceAnalysis dep_analysis(env, func_val_bounds);
+    DependenceAnalysis dep_analysis(env, order, func_val_bounds);
 
     // Compute bounds of all functions in the pipeline given estimates on
     // outputs. Also report functions which bounds could not be inferred.
