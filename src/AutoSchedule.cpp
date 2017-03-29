@@ -26,6 +26,16 @@ using std::make_pair;
 
 namespace {
 
+// Return true if any of the box dimension is unbounded.
+bool is_box_unbounded(const Box &b) {
+    for (size_t i = 0; i < b.size(); i++) {
+        if (!b[i].is_bounded()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Helper function to simplify the upper and lower bounds of each dimension of a box.
 void simplify_box(Box &b) {
     for (size_t i = 0; i < b.size(); i++) {
@@ -947,7 +957,7 @@ struct Partitioner {
 
     Partitioner(const map<string, Box> &_pipeline_bounds, const MachineParams &_arch_params,
                 DependenceAnalysis &_dep_analysis, RegionCosts &_costs,
-                const vector<Function> &_outputs);
+                const vector<Function> &_outputs, const set<string> &unbounded);
 
     void initialize_groups();
 
@@ -1168,12 +1178,17 @@ Partitioner::Partitioner(const map<string, Box> &_pipeline_bounds,
                          const MachineParams &_arch_params,
                          DependenceAnalysis &_dep_analysis,
                          RegionCosts &_costs,
-                         const vector<Function> &_outputs)
+                         const vector<Function> &_outputs,
+                         const set<string> &unbounded)
         : pipeline_bounds(_pipeline_bounds), arch_params(_arch_params),
           dep_analysis(_dep_analysis), costs(_costs), outputs(_outputs) {
-    // Place each stage of a function in its own group. Each stage
-    // is a node in the pipeline graph.
+    // Place each stage of a function in its own group. Each stage is
+    // a node in the pipeline graph. If a function is unbounded, then
+    // we should inline it.
     for (const auto &f : dep_analysis.env) {
+        if (unbounded.find(f.first) != unbounded.end()) {
+            continue;
+        }
         int num_stages = f.second.updates().size() + 1;
         for (int s = 0; s < num_stages; s++) {
             FStage stg(f.second, s);
@@ -1213,6 +1228,34 @@ Partitioner::Partitioner(const map<string, Box> &_pipeline_bounds,
                 FStage cons_stage(f.second, s);
 
                 children[prod_stage].insert(cons_stage);
+            }
+        }
+    }
+
+    // Add the inlined unbounded functions into the consumer groups.
+    for (const auto &f : unbounded) {
+        for (const auto &o : outputs) {
+            internal_assert(o.name() != f) << "Output \"" << f << "\" should have been bounded\n";
+        }
+        const Function &func = get_element(dep_analysis.env, f);
+        int num_stages = func.updates().size() + 1;
+        for (auto &iter : groups) {
+            bool use_f = true;
+            for (int s = 0; s < num_stages; s++) {
+                FStage prod_stage(func, s);
+                for (const auto &m : iter.second.members) {
+                    const auto &c = get_element(children, prod_stage);
+                    if (c.find(m) != c.end()) {
+                        use_f = true;
+                        break;
+                    }
+                }
+            }
+            if (use_f) {
+                for (int s = 0; s < num_stages; s++) {
+                    iter.second.members.push_back(FStage(func, s));
+                }
+                iter.second.inlined.insert(f);
             }
         }
     }
@@ -2998,6 +3041,38 @@ void inline_all_trivial_functions(const vector<Function> &outputs, map<string, F
     }
 }
 
+// Return true if 'f' is used by some extern Func.
+bool used_by_extern_func(const map<string, Function> &env, const Function &f) {
+    for (const auto &iter : env) {
+        for (const ExternFuncArgument &arg : iter.second.extern_arguments()) {
+            if (arg.is_func()) {
+                if (Function(arg.func).name() == f.name()) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+// If the bounds of a Func are undefined, then we should just inline the Func
+// as long as it is not an extern Func or used by some extern Func.
+set<string> get_unbounded_functions(const map<string, Box> &pipeline_bounds,
+                                    const map<string, Function> &env) {
+    set<string> unbounded;
+    for (const auto &iter : env) {
+        const Function &f = iter.second;
+        if (f.has_extern_definition() || used_by_extern_func(env, f)) {
+            continue;
+        }
+        const Box &bound = get_element(pipeline_bounds, iter.first);
+        if (is_box_unbounded(bound)) {
+            unbounded.insert(iter.first);
+        }
+    }
+    return unbounded;
+}
+
 } // anonymous namespace
 
 // Generate schedules for all functions in the pipeline required to compute the
@@ -3045,7 +3120,11 @@ string generate_schedules(const vector<Function> &outputs, const Target &target,
     map<string, Box> pipeline_bounds =
         get_pipeline_bounds(dep_analysis, outputs, &costs.input_estimates);
 
-    Partitioner part(pipeline_bounds, arch_params, dep_analysis, costs, outputs);
+    // Determine all unbounded functions that are not extern Func or
+    // used by some extern Funcs.
+    set<string> unbounded = get_unbounded_functions(pipeline_bounds, env);
+
+    Partitioner part(pipeline_bounds, arch_params, dep_analysis, costs, outputs, unbounded);
 
     // Compute and display reuse
     /* TODO: Use the reuse estimates to reorder loops
