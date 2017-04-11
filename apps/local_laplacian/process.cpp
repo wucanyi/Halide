@@ -4,7 +4,7 @@
 #include "local_laplacian.h"
 #include "local_laplacian_auto_schedule.h"
 
-#include "benchmark.h"
+#include "halide_benchmark.h"
 #include "HalideBuffer.h"
 #include "halide_image_io.h"
 

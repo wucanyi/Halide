@@ -258,6 +258,9 @@ const std::map<std::string, Target::Feature> feature_name_map = {
     {"avx512_knl", Target::AVX512_KNL},
     {"avx512_skylake", Target::AVX512_Skylake},
     {"avx512_cannonlake", Target::AVX512_Cannonlake},
+    {"trace_loads", Target::TraceLoads},
+    {"trace_stores", Target::TraceStores},
+    {"trace_realizations", Target::TraceRealizations},
 };
 
 bool lookup_feature(const std::string &tok, Target::Feature &result) {
@@ -514,6 +517,7 @@ Target::Feature target_feature_for_device_api(DeviceAPI api) {
     case DeviceAPI::GLSL:          return Target::OpenGL;
     case DeviceAPI::OpenGLCompute: return Target::OpenGLCompute;
     case DeviceAPI::Metal:         return Target::Metal;
+    case DeviceAPI::Hexagon:       return Target::HVX_128;
     default:                       return Target::FeatureEnd;
     }
 }

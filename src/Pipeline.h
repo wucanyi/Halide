@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "AutoSchedule.h"
+#include "ExternalCode.h"
 #include "IntrusivePtr.h"
 #include "JITModule.h"
 #include "Module.h"

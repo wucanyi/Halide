@@ -236,6 +236,26 @@ private:
     Scope<pair<int64_t, int64_t>> bounds_info;
     Scope<ModulusRemainder> alignment_info;
 
+    // If we encounter a reference to a buffer (a Load, Store, Call,
+    // or Provide), there's an implicit dependence on some associated
+    // symbols.
+    void found_buffer_reference(const string &name, size_t dimensions = 0) {
+        for (size_t i = 0; i < dimensions; i++) {
+            string stride = name + ".stride." + std::to_string(i);
+            if (var_info.contains(stride)) {
+                var_info.ref(stride).old_uses++;
+            }
+
+            string min = name + ".min." + std::to_string(i);
+            if (var_info.contains(min)) {
+                var_info.ref(min).old_uses++;
+            }
+        }
+
+        if (var_info.contains(name)) {
+            var_info.ref(name).old_uses++;
+        }
+    }
 
     using IRMutator::visit;
 
@@ -3949,6 +3969,8 @@ private:
     }
 
     void visit(const Load *op) {
+        found_buffer_reference(op->name);
+
         Expr predicate = mutate(op->predicate);
         Expr index = mutate(op->index);
 
@@ -3969,26 +3991,9 @@ private:
     }
 
     void visit(const Call *op) {
-        // Calls implicitly depend on mins and strides of the buffer referenced
+        // Calls implicitly depend on host, dev, mins, and strides of the buffer referenced
         if (op->call_type == Call::Image || op->call_type == Call::Halide) {
-            for (size_t i = 0; i < op->args.size(); i++) {
-                {
-                    ostringstream oss;
-                    oss << op->name << ".stride." << i;
-                    string stride = oss.str();
-                    if (var_info.contains(stride)) {
-                        var_info.ref(stride).old_uses++;
-                    }
-                }
-                {
-                    ostringstream oss;
-                    oss << op->name << ".min." << i;
-                    string min = oss.str();
-                    if (var_info.contains(min)) {
-                        var_info.ref(min).old_uses++;
-                    }
-                }
-            }
+            found_buffer_reference(op->name, op->args.size());
         }
 
         if (op->is_intrinsic(Call::shift_left) ||
@@ -4792,30 +4797,13 @@ private:
     }
 
     void visit(const Provide *op) {
-        // Provides implicitly depend on mins and strides of the buffer referenced
-        for (size_t i = 0; i < op->args.size(); i++) {
-            {
-                ostringstream oss;
-                oss << op->name << ".stride." << i;
-                string stride = oss.str();
-                if (var_info.contains(stride)) {
-                    var_info.ref(stride).old_uses++;
-                }
-            }
-            {
-                ostringstream oss;
-                oss << op->name << ".min." << i;
-                string min = oss.str();
-                if (var_info.contains(min)) {
-                    var_info.ref(min).old_uses++;
-                }
-            }
-        }
-
+        found_buffer_reference(op->name, op->args.size());
         IRMutator::visit(op);
     }
 
     void visit(const Store *op) {
+        found_buffer_reference(op->name);
+
         Expr predicate = mutate(op->predicate);
         Expr value = mutate(op->value);
         Expr index = mutate(op->index);
@@ -6425,6 +6413,31 @@ void simplify_test() {
         Expr value = Load::make(index.type(), "f", index, Buffer<>(), Parameter(), const_true(index.type().lanes()));
         Stmt stmt = Store::make("f", value, index, Parameter(), pred);
         check(stmt, Evaluate::make(0));
+    }
+
+    {
+        // Verify that integer types passed to min() and max() are coerced to match
+        // Exprs, rather than being promoted to int first. (TODO: This doesn't really
+        // belong in the test for Simplify, but IROperator has no test unit of its own.)
+        Expr one = cast<uint16_t>(1);
+        const int two = 2;  // note that type is int, not uint16_t
+        Expr r1, r2, r3;
+
+        r1 = min(one, two);
+        internal_assert(r1.type() == halide_type_of<uint16_t>());
+        r2 = min(one, two, one);
+        internal_assert(r2.type() == halide_type_of<uint16_t>());
+        // Explicitly passing 'two' as an Expr, rather than an int, will defeat this logic.
+        r3 = min(one, Expr(two), one);
+        internal_assert(r3.type() == halide_type_of<int>());
+
+        r1 = max(one, two);
+        internal_assert(r1.type() == halide_type_of<uint16_t>());
+        r2 = max(one, two, one);
+        internal_assert(r2.type() == halide_type_of<uint16_t>());
+        // Explicitly passing 'two' as an Expr, rather than an int, will defeat this logic.
+        r3 = max(one, Expr(two), one);
+        internal_assert(r3.type() == halide_type_of<int>());
     }
 
     std::cout << "Simplify test passed" << std::endl;

@@ -545,6 +545,7 @@ void StubEmitter::emit() {
     indent_level++;
     stream << indent() << ": " << class_name << "(*context, inputs, params) {}\n";
     stream << "\n";
+    indent_level--;
 
     if (!generator_params.empty()) {
         stream << indent() << "// templated construction method with inputs\n";
@@ -587,7 +588,6 @@ void StubEmitter::emit() {
         indent_level--;
         stream << indent() << ");\n";
         stream << indent() << "return " << class_name << "(context, inputs, gp);\n";
-        indent_level--;
         indent_level--;
         stream << indent() << "}\n";
         stream << "\n";
@@ -674,6 +674,7 @@ GeneratorStub::GeneratorStub(const GeneratorContext &context,
                              const std::map<std::string, std::string> &generator_params,
                              const std::vector<std::vector<Internal::StubInput>> &inputs)
     : generator(generator_factory(context, generator_params)) {
+    generator->externs_map = context.get_externs_map();
     generator->set_inputs_vector(inputs);
     generator->call_generate();
 }
@@ -742,16 +743,11 @@ std::string halide_type_to_c_type(const Type &t) {
     return m.at(encode(t));
 }
 
-LoopLevel get_halide_undefined_looplevel() {
-    static LoopLevel undefined(Func("__undefined_looplevel_func"), Var("__undefined_looplevel_var"));
-    return undefined;
-}
-
 const std::map<std::string, LoopLevel> &get_halide_looplevel_enum_map() {
     static const std::map<std::string, LoopLevel> halide_looplevel_enum_map{
         {"root", LoopLevel::root()},
-        {"undefined", get_halide_undefined_looplevel()},
-        {"inline", LoopLevel()},
+        {"undefined", LoopLevel()},
+        {"inline", LoopLevel::inlined()},
     };
     return halide_looplevel_enum_map;
 }
@@ -1055,6 +1051,14 @@ GeneratorBase::~GeneratorBase() {
     ObjectInstanceRegistry::unregister_instance(this); 
 }
 
+std::shared_ptr<GeneratorContext::ExternsMap> GeneratorBase::get_externs_map() const {
+    // Lazily create the ExternsMap.
+    if (externs_map == nullptr) {
+        externs_map = std::make_shared<ExternsMap>();
+    }
+    return externs_map;
+}
+
 GeneratorBase::ParamInfo::ParamInfo(GeneratorBase *generator, const size_t size) {
     std::set<std::string> names;
     std::vector<void *> vf = ObjectInstanceRegistry::instances_in_range(
@@ -1336,39 +1340,42 @@ void GeneratorBase::post_build() {
     track_parameter_values(true);
 }
 
-Pipeline GeneratorBase::produce_pipeline() {
-    ParamInfo &pi = param_info();
-    user_assert(pi.filter_outputs.size() > 0) << "Must use produce_pipeline<> with Output<>.";
-    std::vector<Func> funcs;
-    for (auto output : pi.filter_outputs) {
-        for (const auto &f : output->funcs()) {
-            user_assert(f.defined()) << "Output \"" << f.name() << "\" was not defined.\n";
-            if (output->dimensions_defined()) {
-                user_assert(f.dimensions() == output->dimensions()) << "Output \"" << f.name() 
-                    << "\" requires dimensions=" << output->dimensions() 
-                    << " but was defined as dimensions=" << f.dimensions() << ".\n";
-            }
-            if (output->types_defined()) {
-                user_assert((int)f.outputs() == (int)output->types().size()) << "Output \"" << f.name() 
-                        << "\" requires a Tuple of size " << output->types().size() 
-                        << " but was defined as Tuple of size " << f.outputs() << ".\n";
-                for (size_t i = 0; i < f.output_types().size(); ++i) {
-                    Type expected = output->types().at(i);
-                    Type actual = f.output_types()[i];
-                    user_assert(expected == actual) << "Output \"" << f.name() 
-                        << "\" requires type " << expected 
-                        << " but was defined as type " << actual << ".\n";
+Pipeline GeneratorBase::get_pipeline() {
+    check_min_phase(GenerateCalled);
+    if (!pipeline.defined()) {
+        ParamInfo &pi = param_info();
+        user_assert(pi.filter_outputs.size() > 0) << "Must use get_pipeline<> with Output<>.";
+        std::vector<Func> funcs;
+        for (auto output : pi.filter_outputs) {
+            for (const auto &f : output->funcs()) {
+                user_assert(f.defined()) << "Output \"" << f.name() << "\" was not defined.\n";
+                if (output->dimensions_defined()) {
+                    user_assert(f.dimensions() == output->dimensions()) << "Output \"" << f.name() 
+                        << "\" requires dimensions=" << output->dimensions() 
+                        << " but was defined as dimensions=" << f.dimensions() << ".\n";
                 }
+                if (output->types_defined()) {
+                    user_assert((int)f.outputs() == (int)output->types().size()) << "Output \"" << f.name() 
+                            << "\" requires a Tuple of size " << output->types().size() 
+                            << " but was defined as Tuple of size " << f.outputs() << ".\n";
+                    for (size_t i = 0; i < f.output_types().size(); ++i) {
+                        Type expected = output->types().at(i);
+                        Type actual = f.output_types()[i];
+                        user_assert(expected == actual) << "Output \"" << f.name() 
+                            << "\" requires type " << expected 
+                            << " but was defined as type " << actual << ".\n";
+                    }
+                }
+                funcs.push_back(f);
             }
-            funcs.push_back(f);
         }
+        pipeline = Pipeline(funcs);
     }
-    return Pipeline(funcs);
+    return pipeline;
 }
 
 Module GeneratorBase::build_module(const std::string &function_name,
                                    const LoweredFunc::LinkageType linkage_type) {
-    // ParamInfo &pi = param_info();
     Pipeline pipeline = build_pipeline();
 
     // Special-case here: for certain legacy Generators, building the pipeline 
@@ -1390,7 +1397,15 @@ Module GeneratorBase::build_module(const std::string &function_name,
             filter_arguments.push_back(to_argument(p));
         }
     }
-    return pipeline.compile_to_module(filter_arguments, function_name, target, linkage_type);
+
+    Module result = pipeline.compile_to_module(filter_arguments, function_name, target, linkage_type);
+    std::shared_ptr<ExternsMap> externs_map = get_externs_map();
+    if (externs_map) {
+        for (const auto &map_entry : *externs_map) {
+            result.append(map_entry.second);
+        }
+    }
+    return result;
 }
 
 void GeneratorBase::emit_cpp_stub(const std::string &stub_file_path) {
@@ -1706,14 +1721,10 @@ GeneratorOutputBase::~GeneratorOutputBase() {
 }
 
 void GeneratorOutputBase::check_value_writable() const {
-    user_assert(generator && generator->phase == GeneratorBase::GenerateCalled)  << "The Output " << name() << " cannot only be set inside generate().\n";
+    user_assert(generator && generator->phase == GeneratorBase::GenerateCalled)  << "The Output " << name() << " can only be set inside generate().\n";
 }
 
 void GeneratorOutputBase::init_internals() {
-    // user_assert(array_size_defined()) << "ArraySize is not defined for Output " << name() << "; you may need to specify a GeneratorParam.\n";
-    // user_assert(types_defined()) << "Type is not defined for Output " << name() << "; you may need to specify a GeneratorParam.\n";
-    // user_assert(dimensions_defined()) << "Dimensions is not defined for Output " << name() << "; you may need to specify a GeneratorParam.\n";
-
     exprs_.clear();
     funcs_.clear();
     if (array_size_defined()) {

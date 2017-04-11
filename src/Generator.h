@@ -202,6 +202,7 @@
 #include <vector>
 
 #include "Func.h"
+#include "ExternalCode.h"
 #include "Introspection.h"
 #include "ObjectInstanceRegistry.h"
 #include "Target.h"
@@ -274,7 +275,6 @@ inline std::string halide_type_to_enum_string(const Type &t) {
     return enum_to_string(get_halide_type_enum_map(), t);
 }
 
-EXPORT extern Halide::LoopLevel get_halide_undefined_looplevel();
 EXPORT extern const std::map<std::string, Halide::LoopLevel> &get_halide_looplevel_enum_map();
 inline std::string halide_looplevel_to_enum_string(const LoopLevel &loop_level){
     return enum_to_string(get_halide_looplevel_enum_map(), loop_level);
@@ -705,9 +705,9 @@ public:
     }
 
     std::string get_default_value() const override {
-        if (def == "undefined") return "Halide::Internal::get_halide_undefined_looplevel()";
+        if (def == "undefined") return "LoopLevel()";
         if (def == "root") return "LoopLevel::root()";
-        if (def == "inline") return "LoopLevel()";
+        if (def == "inline") return "LoopLevel::inlined()";
         user_error << "LoopLevel value " << def << " not found.\n";
         return "";
     }
@@ -717,7 +717,7 @@ public:
     }
 
     bool defined() const {
-        return this->value() != get_halide_undefined_looplevel();
+        return this->value().defined();
     }
 
 private:
@@ -1675,7 +1675,74 @@ public:
 
 namespace Internal {
 
+
 class GeneratorOutputBase : public GIOBase {
+public:
+#define HALIDE_OUTPUT_FORWARD(method)                                       \
+    template<typename ...Args>                                              \
+    inline auto method(Args&&... args) ->                                   \
+        decltype(std::declval<Func>().method(std::forward<Args>(args)...)) {\
+        return get_func_ref().method(std::forward<Args>(args)...);          \
+    }
+
+#define HALIDE_OUTPUT_FORWARD_CONST(method)                                 \
+    template<typename ...Args>                                              \
+    inline auto method(Args&&... args) const ->                             \
+        decltype(std::declval<Func>().method(std::forward<Args>(args)...)) {\
+        return get_func_ref().method(std::forward<Args>(args)...);          \
+    }
+
+    /** Forward schedule-related methods to the underlying Func. */
+    // @{
+    HALIDE_OUTPUT_FORWARD(align_bounds)
+    HALIDE_OUTPUT_FORWARD(align_storage)
+    HALIDE_OUTPUT_FORWARD_CONST(args)
+    HALIDE_OUTPUT_FORWARD(bound)
+    HALIDE_OUTPUT_FORWARD(bound_extent)
+    HALIDE_OUTPUT_FORWARD(compute_at)
+    HALIDE_OUTPUT_FORWARD(compute_inline)
+    HALIDE_OUTPUT_FORWARD(compute_root)
+    HALIDE_OUTPUT_FORWARD_CONST(defined)
+    HALIDE_OUTPUT_FORWARD(fold_storage)
+    HALIDE_OUTPUT_FORWARD(fuse)
+    HALIDE_OUTPUT_FORWARD(glsl)
+    HALIDE_OUTPUT_FORWARD(gpu)
+    HALIDE_OUTPUT_FORWARD(gpu_blocks)
+    HALIDE_OUTPUT_FORWARD(gpu_single_thread)
+    HALIDE_OUTPUT_FORWARD(gpu_threads)
+    HALIDE_OUTPUT_FORWARD(gpu_tile)
+    HALIDE_OUTPUT_FORWARD_CONST(has_update_definition)
+    HALIDE_OUTPUT_FORWARD(hexagon)
+    HALIDE_OUTPUT_FORWARD(in)
+    HALIDE_OUTPUT_FORWARD(memoize)
+    HALIDE_OUTPUT_FORWARD_CONST(num_update_definitions)
+    HALIDE_OUTPUT_FORWARD_CONST(output_types)
+    HALIDE_OUTPUT_FORWARD_CONST(outputs)
+    HALIDE_OUTPUT_FORWARD(parallel)
+    HALIDE_OUTPUT_FORWARD(prefetch)
+    HALIDE_OUTPUT_FORWARD(rename)
+    HALIDE_OUTPUT_FORWARD(reorder)
+    HALIDE_OUTPUT_FORWARD(reorder_storage)
+    HALIDE_OUTPUT_FORWARD_CONST(rvars)
+    HALIDE_OUTPUT_FORWARD(serial)
+    HALIDE_OUTPUT_FORWARD(shader)
+    HALIDE_OUTPUT_FORWARD(specialize)
+    HALIDE_OUTPUT_FORWARD(split)
+    HALIDE_OUTPUT_FORWARD(store_at)
+    HALIDE_OUTPUT_FORWARD(store_root)
+    HALIDE_OUTPUT_FORWARD(tile)
+    HALIDE_OUTPUT_FORWARD(unroll)
+    HALIDE_OUTPUT_FORWARD(update)
+    HALIDE_OUTPUT_FORWARD_CONST(update_args)
+    HALIDE_OUTPUT_FORWARD_CONST(update_value)
+    HALIDE_OUTPUT_FORWARD_CONST(update_values)
+    HALIDE_OUTPUT_FORWARD_CONST(value)
+    HALIDE_OUTPUT_FORWARD_CONST(values)
+    HALIDE_OUTPUT_FORWARD(vectorize)
+    // }@
+
+#undef HALIDE_OUTPUT_FORWARD
+
 protected:
     EXPORT GeneratorOutputBase(size_t array_size,
                         const std::string &name,
@@ -1701,6 +1768,18 @@ protected:
     }
 
     EXPORT void check_value_writable() const override;
+
+    NO_INLINE Func &get_func_ref() {
+        internal_assert(kind() != IOKind::Scalar);
+        internal_assert(funcs_.size() == array_size() && exprs_.empty());
+        return funcs_[0];
+    }
+
+    NO_INLINE const Func &get_func_ref() const {
+        internal_assert(kind() != IOKind::Scalar);
+        internal_assert(funcs_.size() == array_size() && exprs_.empty());
+        return funcs_[0];
+    }
 };
 
 template<typename T>
@@ -2138,6 +2217,26 @@ class GeneratorContext {
 public:
     virtual ~GeneratorContext() {};
     virtual Target get_target() const = 0;
+
+    using ExternsMap = std::map<std::string, ExternalCode>;
+
+    /** Generators can register ExternalCode objects onto
+     * themselves. The Generator infrastructure will arrange to have
+     * this ExternalCode appended to the Module that is finally
+     * compiled using the Generator. This allows encapsulating
+     * functionality that depends on external libraries or handwritten
+     * code for various targets. The name argument should match the
+     * name of the ExternalCode block and is used to ensure the same
+     * code block is not duplicated in the output. Halide does not do
+     * anything other than to compare names for equality. To guarantee
+     * uniqueness in public code, we suggest using a Java style
+     * inverted domain name followed by organization specific
+     * naming. E.g.:
+     *     com.yoyodyne.overthruster.0719acd19b66df2a9d8d628a8fefba911a0ab2b7
+     *
+     * See test/generator/external_code_generator.cpp for example use. */
+    virtual std::shared_ptr<ExternsMap> get_externs_map() const = 0;
+
 protected:
     friend class Internal::GeneratorBase;
     virtual std::shared_ptr<Internal::ValueTracker> get_value_tracker() const = 0;
@@ -2161,12 +2260,17 @@ class JITGeneratorContext : public GeneratorContext {
 public:
     explicit JITGeneratorContext(const Target &t)
         : target(t)
+        , externs_map(std::make_shared<ExternsMap>())
         , value_tracker(std::make_shared<Internal::ValueTracker>()) {}
     Target get_target() const override { return target; }
+    // Note that JITGeneratorContext is always "top-level", so it will never take
+    // an ExternsMap from a parent (since it has no parents).
+    std::shared_ptr<ExternsMap> get_externs_map() const override { return externs_map; }
 protected:
     std::shared_ptr<Internal::ValueTracker> get_value_tracker() const override { return value_tracker; }
 private:
     const Target target;
+    const std::shared_ptr<ExternsMap> externs_map;
     const std::shared_ptr<Internal::ValueTracker> value_tracker;
 };
 
@@ -2299,7 +2403,7 @@ public:
 
     Realization realize(std::vector<int32_t> sizes) {
         check_scheduled("realize");
-        return produce_pipeline().realize(sizes, get_target());
+        return get_pipeline().realize(sizes, get_target());
     }
 
     // Only enable if none of the args are Realization; otherwise we can incorrectly
@@ -2307,13 +2411,24 @@ public:
     template <typename... Args, typename std::enable_if<NoRealizations<Args...>::value>::type * = nullptr>
     Realization realize(Args&&... args) {
         check_scheduled("realize");
-        return produce_pipeline().realize(std::forward<Args>(args)..., get_target());
+        return get_pipeline().realize(std::forward<Args>(args)..., get_target());
     }
 
     void realize(Realization r) {
         check_scheduled("realize");
-        produce_pipeline().realize(r, get_target());
+        get_pipeline().realize(r, get_target());
     }
+
+    // Return the Pipeline that has been built by the generate() method.
+    // This method can only be used from a Generator that has a generate()
+    // method (vs a build() method), and currently can only be called from
+    // the schedule() method. (This may be relaxed in the future to allow
+    // calling from generate() as long as all Outputs have been defined.)
+    EXPORT Pipeline get_pipeline();
+
+    // Return a map in which to register external code this Generator requires
+    // at link time.
+    EXPORT std::shared_ptr<ExternsMap> get_externs_map() const override;
 
 protected:
     EXPORT GeneratorBase(size_t size, const void *introspection_helper);
@@ -2333,7 +2448,6 @@ protected:
     EXPORT void post_generate();
     EXPORT void pre_schedule();
     EXPORT void post_schedule();
-    EXPORT Pipeline produce_pipeline();
 
     template<typename T>
     using Input = GeneratorInput<T>;
@@ -2403,8 +2517,12 @@ private:
     std::unique_ptr<ParamInfo> param_info_ptr;
 
     std::shared_ptr<Internal::ValueTracker> value_tracker;
+
+    mutable std::shared_ptr<ExternsMap> externs_map;
+
     bool inputs_set{false};
     std::string generator_name;
+    Pipeline pipeline;
 
     // Return our ParamInfo (lazy-initing as needed).
     EXPORT ParamInfo &param_info();
@@ -2694,7 +2812,7 @@ private:
     Pipeline build_pipeline_impl() {
         ((T *)this)->call_generate_impl();
         ((T *)this)->call_schedule_impl();
-        return produce_pipeline();
+        return get_pipeline();
     }
 
     // Implementations for call_generate_impl(), specialized on whether we
@@ -2890,7 +3008,9 @@ private:
         return generator->get_first_output();
     }
     explicit GeneratorStub(const GeneratorStub &) = delete;
-    void operator=(const GeneratorStub &) = delete;
+    GeneratorStub &operator=(const GeneratorStub &) = delete;
+    explicit GeneratorStub(const GeneratorStub &&) = delete;
+    GeneratorStub &operator=(const GeneratorStub &&) = delete;
 };
 
 }  // namespace Internal

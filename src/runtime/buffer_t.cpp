@@ -40,6 +40,16 @@ int _halide_buffer_get_max(const halide_buffer_t *buf, int d) {
 }
 
 HALIDE_BUFFER_HELPER_ATTRS
+int _halide_buffer_get_extent(const halide_buffer_t *buf, int d) {
+    return buf->dim[d].extent;
+}
+
+HALIDE_BUFFER_HELPER_ATTRS
+int _halide_buffer_get_stride(const halide_buffer_t *buf, int d) {
+    return buf->dim[d].stride;
+}
+
+HALIDE_BUFFER_HELPER_ATTRS
 int _halide_buffer_set_host_dirty(halide_buffer_t *buf, bool val) {
     buf->set_host_dirty(val);
     return 0;
@@ -67,8 +77,23 @@ halide_dimension_t *_halide_buffer_get_shape(halide_buffer_t *buf) {
 }
 
 HALIDE_BUFFER_HELPER_ATTRS
-bool _halide_buffer_is_bounds_query(halide_buffer_t *buf) {
+bool _halide_buffer_is_bounds_query(const halide_buffer_t *buf) {
     return buf->host == NULL && buf->device == 0;
+}
+
+HALIDE_BUFFER_HELPER_ATTRS
+uint8_t _halide_buffer_get_type_code(const halide_buffer_t *buf) {
+    return buf->type.code;
+}
+
+HALIDE_BUFFER_HELPER_ATTRS
+uint8_t _halide_buffer_get_type_bits(const halide_buffer_t *buf) {
+    return buf->type.bits;
+}
+
+HALIDE_BUFFER_HELPER_ATTRS
+uint16_t _halide_buffer_get_type_lanes(const halide_buffer_t *buf) {
+    return buf->type.lanes;
 }
 
 HALIDE_BUFFER_HELPER_ATTRS
@@ -100,7 +125,7 @@ halide_buffer_t *_halide_buffer_init(halide_buffer_t *dst,
 HALIDE_BUFFER_HELPER_ATTRS
 halide_buffer_t *_halide_buffer_init_from_buffer(halide_buffer_t *dst,
                                                  halide_dimension_t *dst_shape,
-                                                 halide_buffer_t *src) {
+                                                 const halide_buffer_t *src) {
     dst->host = src->host;
     dst->device = src->device;
     dst->device_interface = src->device_interface;
@@ -111,6 +136,24 @@ halide_buffer_t *_halide_buffer_init_from_buffer(halide_buffer_t *dst,
     for (int i = 0; i < dst->dimensions; i++) {
         dst->dim[i] = src->dim[i];
     }
+    return dst;
+}
+
+HALIDE_BUFFER_HELPER_ATTRS
+halide_buffer_t *_halide_buffer_crop(halide_buffer_t *dst,
+                                     halide_dimension_t *dst_shape,
+                                     const halide_buffer_t *src,
+                                     const int *min, const int *extent) {
+    *dst = *src;
+    dst->dim = dst_shape;
+    int64_t offset = 0;
+    for (int i = 0; i < dst->dimensions; i++) {
+        dst->dim[i] = src->dim[i];
+        dst->dim[i].min = min[i];
+        dst->dim[i].extent = extent[i];
+        offset += (min[i] - src->dim[i].min) * src->dim[i].stride;
+    }
+    dst->host += offset * src->type.bytes();
     return dst;
 }
 
