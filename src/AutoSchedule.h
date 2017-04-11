@@ -16,7 +16,7 @@ namespace Halide {
 struct MachineParams {
 	/** Maximum level of parallelism avalaible. */
     uint32_t parallelism;
-    /** Size of the last-level cache. */
+    /** Size of the last-level cache (in KB). */
     uint32_t last_level_cache_size;
     /** Indicates how much more expensive is the cost of a load compared to
      * the cost of an arithmetic operation at last level cache. */
