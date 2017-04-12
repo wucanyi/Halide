@@ -87,9 +87,11 @@ public:
     EXPORT std::string auto_schedule(const Target &target);
     //@}
 
-    /** Return handle to a Func within the pipeline that has the specified name.
-     * Throw an error if the Func does not exist within the pipeline. */
-    EXPORT Func get_func(const std::string &name);
+    /** Return handle to the index-th Func within the pipeline (ordered by
+     * construction order) that has the specified name. get_func("f", 0) will
+     * return handle to the first "f" constructed in the pipeline. Throw an
+     * error if the Func does not exist within the pipeline. */
+    EXPORT Func get_func(const std::string &name, size_t index);
 
     /** Compile and generate multiple target files with single call.
      * Deduces target files based on filenames specified in

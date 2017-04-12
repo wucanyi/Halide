@@ -689,6 +689,10 @@ struct AutoSchedule {
         }
     };
 
+    // Contain all functions in the pipeline. Grouped by the function base
+    // name. Each group is ordered based on time of construction.
+    map<string, vector<Function>> fn_list;
+
     // Contain all the vars/rvars in the original dim lists of all functions in
     // the pipeline.
     map<string, VarOrRVar> dim_vars;
@@ -705,6 +709,10 @@ struct AutoSchedule {
     AutoSchedule(const map<string, Function> &env) {
         for (const auto &iter : env) {
             const Function &f = iter.second;
+
+            string base = FunctionCompare().is_automatic_func_name(iter.first) ? "f" : split_string(iter.first, "$")[0];
+            fn_list[base].push_back(f);
+
             int num_stages = f.updates().size() + 1;
             for (int s = 0; s < num_stages; s++) {
                 Definition def = get_stage_definition(f, s);
@@ -714,6 +722,23 @@ struct AutoSchedule {
                 }
             }
         }
+        // Sort the function list based on name and time of construction
+        for (auto &iter : fn_list) {
+            std::sort(iter.second.begin(), iter.second.end(), FunctionCompare());
+        }
+    }
+
+    string get_func_handle(const string &name) const {
+        string base = FunctionCompare().is_automatic_func_name(name) ? "f" : split_string(name, "$")[0];
+        const vector<Function> &fns = get_element(fn_list, base);
+        int index = -1;
+        for (size_t i = 0; i < fns.size(); ++i) {
+            if (fns[i].name() == name) {
+                index = i;
+            }
+        }
+        internal_assert(index >= 0 && index < (int)fns.size());
+        return "pipeline.get_func(\"" + base + + "\", " + std::to_string(index) + ")";
     }
 
     friend std::ostream& operator<<(std::ostream &stream, const AutoSchedule &sched) {
@@ -739,7 +764,7 @@ struct AutoSchedule {
 
         for (const auto &iter : sched.func_schedules) {
             internal_assert(!iter.second.empty());
-            stream << "pipeline.get_func(\"" << iter.first.function << "\")";
+            stream << sched.get_func_handle(iter.first.function);
             if (iter.first.stage > 0) {
                 stream << ".update(" << std::to_string(iter.first.stage - 1) << ")";
             }
@@ -2753,7 +2778,7 @@ void Partitioner::generate_group_cpu_schedule(
                     Func(mem.func).compute_at(Func(g_out), tile_inner_var.var);
                 }
                 sched.push_schedule(mem_handle.name(), mem.stage_num,
-                                    "compute_at(pipeline.get_func(\"" + g_out.name() + "\"), " + tile_inner_var.name() + ")");
+                                    "compute_at(" + sched.get_func_handle(g_out.name()) + ", " + tile_inner_var.name() + ")");
             } else {
                 user_warning << "Degenerate tiling. No dimensions are tiled" << '\n';
                 user_warning << "Computing \"" <<  mem.func.name() << "\" at root" << '\n';

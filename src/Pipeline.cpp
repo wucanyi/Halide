@@ -169,19 +169,26 @@ string Pipeline::auto_schedule(const Target &target) {
     return generate_schedules(contents->outputs, target, arch_params);
 }
 
-Func Pipeline::get_func(const string &name) {
+Func Pipeline::get_func(const string &name, size_t index) {
+    std::map<string, vector<Function>> env;
+    FunctionCompare comparer;
     for (Function f : contents->outputs) {
-        if (name == f.name()) {
-            return Func(f);
-        }
-        std::map<string, Function> more_funcs = find_transitive_calls(f);
         for (const auto &iter : find_transitive_calls(f)) {
-            if (iter.first == name) {
-                return Func(iter.second);
-            }
+            string base = comparer.is_automatic_func_name(iter.first) ? "f" : split_string(iter.first, "$")[0];
+            env[base].push_back(iter.second);
         }
     }
-    user_error << "Func \"" << name << "\" does not exist within the pipeline.\n";
+
+    string base_fn_name = comparer.is_automatic_func_name(name) ? "f" : split_string(name, "$")[0];
+    vector<Function> &fn_list = env[base_fn_name];
+    // Sort the function list based on name and time of construction
+    std::sort(fn_list.begin(), fn_list.end(), comparer);
+
+    if (fn_list.size() > index) {
+        return Func(fn_list[index]);
+    }
+    user_error << index << "-th instance of Func \"" << name
+               << "\" does not exist within the pipeline.\n";
     return Func();
 }
 
