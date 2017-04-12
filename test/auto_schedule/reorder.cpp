@@ -1,9 +1,8 @@
 #include "Halide.h"
-#include "benchmark.h"
-#include "Schedule.h"
+#include "halide_benchmark.h"
 
 using namespace Halide;
-using namespace Halide::Internal;
+using namespace Halide::Tools;
 
 using std::vector;
 
@@ -151,7 +150,7 @@ int main(int argc, char **argv) {
         std::cout << "Auto time: " << auto_time << "ms" << std::endl;
         std::cout << "======================" << std::endl;
 
-        if (auto_time > manual_time * 3) {
+        if (auto_time > manual_time * 2.5) {
             printf("Auto-scheduler is much much slower than it should be.\n");
             return -1;
         }
@@ -167,7 +166,7 @@ int main(int argc, char **argv) {
         std::cout << "Auto time: " << auto_time << "ms" << std::endl;
         std::cout << "======================" << std::endl;
 
-        if (auto_time > manual_time * 3) {
+        if (auto_time > manual_time * 2.5) {
             printf("Auto-scheduler is much much slower than it should be.\n");
             return -1;
         }
@@ -183,7 +182,7 @@ int main(int argc, char **argv) {
         std::cout << "Auto time: " << auto_time << "ms" << std::endl;
         std::cout << "======================" << std::endl;
 
-        if (auto_time > manual_time * 3) {
+        if (auto_time > manual_time * 2.5) {
             printf("Auto-scheduler is much much slower than it should be.\n");
             return -1;
         }

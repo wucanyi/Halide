@@ -908,10 +908,9 @@ $(BIN_DIR)/warning_%: $(ROOT_DIR)/test/warning/%.cpp $(BIN_DIR)/libHalide.$(SHAR
 $(BIN_DIR)/opengl_%: $(ROOT_DIR)/test/opengl/%.cpp $(BIN_DIR)/libHalide.$(SHARED_EXT) $(INCLUDE_DIR)/Halide.h
 	$(CXX) $(TEST_CXX_FLAGS) $(OPTIMIZE) $< -I$(INCLUDE_DIR) -I$(SRC_DIR) $(TEST_LD_FLAGS) $(OPENGL_LD_FLAGS) -o $@ -MMD -MF $(BUILD_DIR)/test_opengl_$*.d
 
-
 # Auto schedule tests that link against libHalide
-$(BIN_DIR)/auto_schedule_%: $(ROOT_DIR)/test/auto_schedule/%.cpp $(BIN_DIR)/libHalide.$(SHARED_EXT) $(INCLUDE_DIR)/Halide.h $(INCLUDE_DIR)/HalideRuntime.h $(ROOT_DIR)/apps/support/benchmark.h
-	$(CXX) $(TEST_CXX_FLAGS) $(OPTIMIZE) $< -I$(SRC_DIR) -I$(INCLUDE_DIR) -I$(ROOT_DIR)/apps/support/ $(TEST_LD_FLAGS) -o $@
+$(BIN_DIR)/auto_schedule_%: $(ROOT_DIR)/test/auto_schedule/%.cpp $(BIN_DIR)/libHalide.$(SHARED_EXT) $(INCLUDE_DIR)/Halide.h
+	$(CXX) $(TEST_CXX_FLAGS) $(OPTIMIZE) $< -I$(INCLUDE_DIR) $(TEST_LD_FLAGS) -o $@
 
 # TODO(srj): this doesn't auto-delete, why not?
 .INTERMEDIATE: $(BIN_DIR)/%.generator

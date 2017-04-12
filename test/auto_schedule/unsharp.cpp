@@ -1,7 +1,8 @@
 #include "Halide.h"
-#include "benchmark.h"
+#include "halide_benchmark.h"
 
 using namespace Halide;
+using namespace Halide::Tools;
 
 double run_test(bool auto_schedule) {
     int W = 1920;
@@ -58,14 +59,14 @@ double run_test(bool auto_schedule) {
             Var xi, yi;
             unsharp.compute_root()
                 .reorder(c, x, y)
-                .gpu_tile(x, y, 16, 16);
-            ratio.compute_at(unsharp, Var::gpu_threads());
-            gray.compute_at(unsharp, Var::gpu_blocks())
+                .gpu_tile(x, y, xi, yi, 16, 16);
+            ratio.compute_at(unsharp, xi);
+            gray.compute_at(unsharp, x)
                 .tile(x, y, xi, yi, 2, 2)
                 .unroll(xi)
                 .unroll(yi)
                 .gpu_threads(x, y);
-            blur_y.compute_at(unsharp, Var::gpu_blocks())
+            blur_y.compute_at(unsharp, x)
                 .unroll(x, 2)
                 .gpu_threads(x, y);
         } else {
@@ -103,7 +104,7 @@ int main(int argc, char **argv) {
     std::cout << "Auto time: " << auto_time << "ms" << std::endl;
     std::cout << "======================" << std::endl;
 
-    if (1.5 * auto_time > manual_time) {
+    if (auto_time > 2 * manual_time) {
         printf("Auto-scheduler is much much slower than it should be.\n");
         return -1;
     }

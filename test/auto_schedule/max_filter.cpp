@@ -1,12 +1,12 @@
 // Circular-support max filter. Does some trickery to get O(r) per pixel for radius r, not O(r^2).
 
 #include "Halide.h"
-#include "benchmark.h"
-
-using namespace Halide;
-
+#include "halide_benchmark.h"
 #include <iostream>
 #include <limits>
+
+using namespace Halide;
+using namespace Halide::Tools;
 
 double run_test(bool auto_schedule) {
     int W = 1920;
@@ -70,7 +70,7 @@ double run_test(bool auto_schedule) {
         if (target.has_gpu_feature()) {
             slice_for_radius.compute_root();
             filter_height.compute_root();
-            Var xo;
+            Var xo, yi;
 
             final
                 .split(x, xo, xi, 128)
@@ -79,7 +79,7 @@ double run_test(bool auto_schedule) {
 
             vert_log.compute_root()
                 .reorder(c, t, x, y)
-                .gpu_tile(x, y, 16, 16)
+                .gpu_tile(x, y, xi, yi, 16, 16)
                 .update()
                 .split(x, xo, xi, 128)
                 .reorder(r.x, r.y, xi, xo, c)

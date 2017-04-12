@@ -1,8 +1,9 @@
 #include "Halide.h"
-#include "benchmark.h"
+#include "halide_benchmark.h"
 #include <stdio.h>
 
 using namespace Halide;
+using namespace Halide::Tools;
 
 Expr sum3x3(Func f, Var x, Var y) {
     return f(x-1, y-1) + f(x-1, y) + f(x-1, y+1) +
@@ -77,11 +78,11 @@ double run_test(bool auto_schedule) {
     Pipeline p(shifted);
 
     if (!auto_schedule) {
-        Var yi, xi;
+        Var xi("xi"), yi("yi");
         if (target.has_gpu_feature()) {
-            shifted.gpu_tile(x, y, 14, 14);
-            Ix.compute_at(shifted, Var::gpu_blocks()).gpu_threads(x, y);
-            Iy.compute_at(shifted, Var::gpu_blocks()).gpu_threads(x, y);
+            shifted.gpu_tile(x, y, xi, yi, 14, 14);
+            Ix.compute_at(shifted, x).gpu_threads(x, y);
+            Iy.compute_at(shifted, x).gpu_threads(x, y);
         } else {
             shifted.tile(x, y, xi, yi, 128, 128)
                    .vectorize(xi, 8).parallel(y);

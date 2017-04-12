@@ -1,7 +1,8 @@
 #include "Halide.h"
-#include "benchmark.h"
+#include "halide_benchmark.h"
 
 using namespace Halide;
+using namespace Halide::Tools;
 
 double run_test(bool auto_schedule) {
     int size = 1024;
@@ -37,9 +38,9 @@ double run_test(bool auto_schedule) {
 
     if (!auto_schedule) {
         if (target.has_gpu_feature()) {
-            Var xi, yi, xii, yii;
-            out.tile(x, y, xi, yi, 8, 8).unroll(xi).unroll(yi).gpu_tile(x, y, 8, 8);
-            prod.compute_at(out, Var::gpu_threads()).update().reorder(x, y, r.x);
+            Var xi("xi"), yi("yi"), xii("xii"), yii("yii"), xt("xt"), yt("yt");
+            out.tile(x, y, xi, yi, 8, 8).unroll(xi).unroll(yi).gpu_tile(x, y, xt, yt, 8, 8);
+            prod.compute_at(out, xt).update().reorder(x, y, r.x);
 
             // This schedule as-is is terrible - 518ms
 
@@ -66,9 +67,9 @@ double run_test(bool auto_schedule) {
 
             Var t;
             prod.update()
-                    .tile(x, y, xi, yi, 2, 2).vectorize(xi).unroll(yi)
-                    .tile(x, y, xii, yii, 2, 2).unroll(xii).unroll(yii)
-                    .unroll(x).unroll(y);
+                .tile(x, y, xi, yi, 2, 2).vectorize(xi).unroll(yi)
+                .tile(x, y, xii, yii, 2, 2).unroll(xii).unroll(yii)
+                .unroll(x).unroll(y);
 
             // 36ms
 
@@ -126,7 +127,7 @@ int main(int argc, char **argv) {
     std::cout << "Auto time: " << auto_time << "ms" << std::endl;
     std::cout << "======================" << std::endl;
 
-    if (auto_time > manual_time * 2.5) {
+    if (auto_time > manual_time * 3) {
         printf("Auto-scheduler is much much slower than it should be.\n");
         return -1;
     }

@@ -1,7 +1,8 @@
 #include "Halide.h"
-#include "benchmark.h"
+#include "halide_benchmark.h"
 
 using namespace Halide;
+using namespace Halide::Tools;
 
 double run_test(bool auto_schedule) {
     int W = 1920;
@@ -61,16 +62,17 @@ double run_test(bool auto_schedule) {
 
     if (!auto_schedule) {
         if (target.has_gpu_feature()) {
-            Y.compute_root().gpu_tile(x, y, 16, 16);
-            hist_rows.compute_root().gpu_tile(y, 16).update().gpu_tile(y, 16);
-            hist.compute_root().gpu_tile(x, 16).update().gpu_tile(x, 16);
+            Var xi("xi"), yi("yi");
+            Y.compute_root().gpu_tile(x, y, xi, yi, 16, 16);
+            hist_rows.compute_root().gpu_tile(y, yi, 16).update().gpu_tile(y, yi, 16);
+            hist.compute_root().gpu_tile(x, xi, 16).update().gpu_tile(x, xi, 16);
             cdf.compute_root().gpu_single_thread();
-            Cr.compute_at(color, Var::gpu_threads());
-            Cb.compute_at(color, Var::gpu_threads());
-            eq.compute_at(color, Var::gpu_threads());
+            Cr.compute_at(color, xi);
+            Cb.compute_at(color, xi);
+            eq.compute_at(color, xi);
             color.compute_root()
-                .reorder(c, x, y).bound(c, 0, 3).unroll(c)
-                .gpu_tile(x, y, 16, 16);
+                 .reorder(c, x, y).bound(c, 0, 3).unroll(c)
+                 .gpu_tile(x, y, xi, yi, 16, 16);
         } else {
             Y.compute_root().parallel(y, 8).vectorize(x, 8);
 
@@ -93,10 +95,10 @@ double run_test(bool auto_schedule) {
             Cb.compute_at(color, x).vectorize(x);
             Cr.compute_at(color, x).vectorize(x);
             color.reorder(c, x, y)
-                .bound(c, 0, 3)
-                .unroll(c)
-                .parallel(y, 8)
-                .vectorize(x, 8);
+                 .bound(c, 0, 3)
+                 .unroll(c)
+                 .parallel(y, 8)
+                 .vectorize(x, 8);
         }
     } else {
         // Provide estimates on the pipeline output
